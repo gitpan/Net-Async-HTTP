@@ -1,0 +1,25 @@
+---
+name: Net-Async-HTTP
+version: 0.01
+author:
+  - 'Paul Evans E<lt>leonerd@leonerd.org.ukE<gt>'
+abstract: Asynchronous HTTP user agent
+license: perl
+resources:
+  license: http://dev.perl.org/licenses/
+build_requires:
+  IO::Async: 0.14
+  IO::Async::Sequencer: 0
+  IO::Async::Test: 0
+  Test::More: 0
+provides:
+  Net::Async::HTTP:
+    file: lib/Net/Async/HTTP.pm
+    version: 0.01
+  Net::Async::HTTP::Client:
+    file: lib/Net/Async/HTTP/Client.pm
+    version: 0.01
+generated_by: Module::Build version 0.280801
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.2.html
+  version: 1.2

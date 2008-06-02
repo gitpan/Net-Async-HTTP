@@ -1,0 +1,10 @@
+Build.PL
+lib/Net/Async/HTTP.pm
+lib/Net/Async/HTTP/Client.pm
+MANIFEST			This list of files
+t/00use.t
+t/01http-req.t
+t/02http-uri.t
+t/10http-pipeline.t
+Makefile.PL
+META.yml
