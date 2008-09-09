@@ -4,7 +4,7 @@ use strict;
 
 use Test::More tests => 45;
 use IO::Async::Test;
-use IO::Async::Loop::IO_Poll;
+use IO::Async::Loop;
 use IO::Async::Stream;
 
 use IO::Socket::UNIX;
@@ -14,7 +14,7 @@ use Net::Async::HTTP;
 
 my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
 
-my $loop = IO::Async::Loop::IO_Poll->new();
+my $loop = IO::Async::Loop->new();
 testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
@@ -44,21 +44,9 @@ sub do_test_req
       on_error    => sub { $error    = $_[0] },
    );
 
-   my $request_stream = "";
-   my $otherend = IO::Async::Stream->new(
-      handle => $S2,
-
-      on_read => sub {
-         $request_stream .= ${$_[1]};
-         ${$_[1]} = "";
-         return 0;
-      }
-   );
-
-   $loop->add( $otherend );
-
    # Wait for the client to send its request
-   wait_for { $request_stream =~ m/$CRLF$CRLF/ };
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
 
    $request_stream =~ s/^(.*)$CRLF//;
    my $req_firstline = $1;
@@ -82,8 +70,8 @@ sub do_test_req
       is( $req_content, $args{expect_req_content}, "Request content for $name" );
    }
 
-   $otherend->write( $args{response} );
-   $otherend->close if $args{close_after_response};
+   $S2->syswrite( $args{response} );
+   $S2->close if $args{close_after_response};
 
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };

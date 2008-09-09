@@ -7,7 +7,7 @@ package Net::Async::HTTP::Client;
 
 use strict;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Carp;
 

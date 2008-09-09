@@ -5,7 +5,9 @@ WriteMakefile
           'NAME' => 'Net::Async::HTTP',
           'VERSION_FROM' => 'lib/Net/Async/HTTP.pm',
           'PREREQ_PM' => {
-                           'IO::Async' => '0.14',
+                           'HTTP::Request' => 0,
+                           'HTTP::Response' => 0,
+                           'IO::Async' => '0.16',
                            'IO::Async::Sequencer' => 0,
                            'IO::Async::Test' => 0,
                            'Test::More' => 0

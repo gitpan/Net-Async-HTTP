@@ -7,7 +7,7 @@ package Net::Async::HTTP;
 
 use strict;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Carp;
 
@@ -82,6 +82,11 @@ A reference to an C<IO::Async::Loop> object.
 A string to set in the C<User-Agent> HTTP header. If not supplied, one will
 be constructed that declares C<Net::Async::HTTP> and the version number.
 
+=item max_redirects => INT
+
+Optional. How many levels of redirection to follow. If not supplied, will
+default to 3. Give 0 to disable redirection entirely.
+
 =back
 
 =cut
@@ -100,6 +105,8 @@ sub new
 
       user_agent => defined $args{user_agent} ? $args{user_agent}
                                               : "Perl + " . __PACKAGE__ . "/$VERSION",
+
+      max_redirects => defined $args{max_redirects} ? $args{max_redirects} : 3,
    }, $class;
 
    return $self;
@@ -233,7 +240,7 @@ For either request type, it takes the following continuation callbacks:
 =item on_response => CODE
 
 A callback that is invoked when a response to this request has been received.
-It will be passed an C<HTTP::Response> object containing the response the
+It will be passed an L<HTTP::Response> object containing the response the
 server sent.
 
  $on_response->( $response )
@@ -244,6 +251,19 @@ A callback that is invoked if an error occurs while trying to send the request
 or obtain the response. It will be passed an error message.
 
  $on_error->( $message )
+
+=item on_redirect => CODE
+
+Optional. A callback that is invoked if a redirect response is received,
+before the new location is fetched. It will be passed the response and the new
+URL.
+
+ $on_redirect->( $response, $location )
+
+=item max_redirects => INT
+
+Optional. How many levels of redirection to follow. If not supplied, will
+default to the value given in the constructor.
 
 =back
 
@@ -256,6 +276,33 @@ sub do_request
 
    my $on_response = $args{on_response} or croak "Expected 'on_response' as a CODE ref";
    my $on_error    = $args{on_error}    or croak "Expected 'on_error' as a CODE ref";
+
+   my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
+
+   # Now build a new on_response continuation that has all the redirect logic
+   my $on_resp_redir = sub {
+      my ( $response ) = @_;
+
+      if( $response->is_redirect and $max_redirects > 0 ) {
+         my $location = $response->header( "Location" );
+         $args{on_redirect}->( $response, $location ) if $args{on_redirect};
+
+         my $loc_uri = URI->new( $location );
+         unless( $loc_uri ) {
+            $on_error->( "Unable to parse '$location' as a URI" );
+            return;
+         }
+
+         $self->do_request(
+            %args,
+            uri => $loc_uri,
+            max_redirects => $max_redirects - 1,
+         );
+      }
+      else {
+         $on_response->( $response );
+      }
+   };
 
    my $request;
 
@@ -304,23 +351,24 @@ sub do_request
       }
    }
 
-    $request->init_header( 'User-Agent' => $self->{user_agent} ) if length $self->{user_agent};
+   $request->init_header( 'User-Agent' => $self->{user_agent} ) if length $self->{user_agent};
 
-   if( $args{handle} ) { # INTERNAL UNDOCUMENTED
+   if( my $handle = $args{handle} ) { # INTERNAL UNDOCUMENTED
       $self->get_connection(
-         handle => $args{handle},
+         handle => $handle,
 
          # To make the connection cache logic happy
          host => "[[local_io_handle]]",
-         port => fileno $args{handle},
+         port => $handle->fileno,
 
          on_error => $on_error,
 
          on_ready => sub {
             my ( $conn ) = @_;
             $conn->request(
-               %args,
                request => $request,
+               on_response => $on_resp_redir,
+               on_error    => $on_error,
             );
          },
       );
@@ -343,8 +391,9 @@ sub do_request
          on_ready => sub {
             my ( $conn ) = @_;
             $conn->request(
-               %args,
                request => $request,
+               on_response => $on_resp_redir,
+               on_error    => $on_error,
             );
          },
       );

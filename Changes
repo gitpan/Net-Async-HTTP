@@ -1,0 +1,10 @@
+Revision history for Net-Async-HTTP
+
+0.02    CHANGES:
+         * Support HTTP redirects
+
+        BUGFIXES:
+         * Declare dependency on HTTP::Request and HTTP::Response
+
+0.01    First version, released on an unsuspecting world.
+

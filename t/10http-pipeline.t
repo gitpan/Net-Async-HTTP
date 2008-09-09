@@ -4,7 +4,7 @@ use strict;
 
 use Test::More tests => 4;
 use IO::Async::Test;
-use IO::Async::Loop::IO_Poll;
+use IO::Async::Loop;
 use IO::Async::Stream;
 
 use IO::Socket::UNIX;
@@ -14,7 +14,7 @@ use Net::Async::HTTP;
 
 my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
 
-my $loop = IO::Async::Loop::IO_Poll->new();
+my $loop = IO::Async::Loop->new();
 testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
@@ -49,21 +49,10 @@ sub do_uris
    }
 
    my $request_stream = "";
-   my $otherend = IO::Async::Stream->new(
-      handle => $S2,
-
-      on_read => sub {
-         $request_stream .= ${$_[1]};
-         ${$_[1]} = "";
-         return 0;
-      }
-   );
-
-   $loop->add( $otherend );
 
    while( keys %wait ) {
       # Wait for the client to send its request
-      wait_for { $request_stream =~ m/$CRLF$CRLF/ };
+      wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
 
       $request_stream =~ s/^(.*)$CRLF//;
       my $req_firstline = $1;
@@ -83,10 +72,10 @@ sub do_uris
 
       my $body = "$req_firstline";
 
-      $otherend->write( "HTTP/1.1 200 OK$CRLF" . 
-                        "Content-Length: " . length( $body ) . $CRLF .
-                        $CRLF .
-                        $body );
+      $S2->syswrite( "HTTP/1.1 200 OK$CRLF" . 
+                     "Content-Length: " . length( $body ) . $CRLF .
+                     $CRLF .
+                     $body );
 
       # Wait for the server to finish its response
       wait_for { keys %wait < $waitcount };
