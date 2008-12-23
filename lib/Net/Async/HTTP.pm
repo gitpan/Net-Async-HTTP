@@ -7,7 +7,7 @@ package Net::Async::HTTP;
 
 use strict;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
@@ -279,19 +279,35 @@ sub do_request
 
    my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
 
+   my $host;
+   my $port;
+
    # Now build a new on_response continuation that has all the redirect logic
    my $on_resp_redir = sub {
       my ( $response ) = @_;
 
       if( $response->is_redirect and $max_redirects > 0 ) {
          my $location = $response->header( "Location" );
-         $args{on_redirect}->( $response, $location ) if $args{on_redirect};
+
+         if( $location =~ m{^http://} ) {
+            # skip
+         }
+         elsif( $location =~ m{^/} ) {
+            my $hostport = ( $port != URI::http->default_port ) ? "$host:$port" : $host;
+            $location = "http://$hostport" . $location;
+         }
+         else {
+            $on_error->( "Unrecognised Location: $location" );
+            return;
+         }
 
          my $loc_uri = URI->new( $location );
          unless( $loc_uri ) {
             $on_error->( "Unable to parse '$location' as a URI" );
             return;
          }
+
+         $args{on_redirect}->( $response, $location ) if $args{on_redirect};
 
          $self->do_request(
             %args,
@@ -305,9 +321,6 @@ sub do_request
    };
 
    my $request;
-
-   my $host;
-   my $port;
 
    if( $args{request} ) {
       $request = delete $args{request};

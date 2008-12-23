@@ -7,7 +7,7 @@ WriteMakefile
           'PREREQ_PM' => {
                            'HTTP::Request' => 0,
                            'HTTP::Response' => 0,
-                           'IO::Async' => '0.16',
+                           'IO::Async' => '0.17',
                            'IO::Async::Sequencer' => 0,
                            'IO::Async::Test' => 0,
                            'Test::More' => 0

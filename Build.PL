@@ -7,7 +7,7 @@ my $build = Module::Build->new
   (
    module_name => 'Net::Async::HTTP',
    requires => {
-                 'IO::Async'      => '0.16',
+                 'IO::Async'      => '0.17',
                  'HTTP::Request'  => 0,
                  'HTTP::Response' => 0,
    },

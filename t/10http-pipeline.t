@@ -7,9 +7,6 @@ use IO::Async::Test;
 use IO::Async::Loop;
 use IO::Async::Stream;
 
-use IO::Socket::UNIX;
-use Socket qw( AF_UNIX SOCK_STREAM PF_UNSPEC );
-
 use Net::Async::HTTP;
 
 my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
@@ -25,8 +22,7 @@ my $http = Net::Async::HTTP->new(
 
 sub do_uris
 {
-   ( my $S1, my $S2 ) = IO::Socket::UNIX->socketpair( AF_UNIX, SOCK_STREAM, PF_UNSPEC ) or
-      die "Cannot create socket pair - $!";
+   my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
 
    my %wait;
    my $wait_id = 0;

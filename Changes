@@ -1,5 +1,8 @@
 Revision history for Net-Async-HTTP
 
+0.03    CHANGES:
+         * Support server-local HTTP redirects
+
 0.02    CHANGES:
          * Support HTTP redirects
 

@@ -1,6 +1,6 @@
 ---
 name: Net-Async-HTTP
-version: 0.02
+version: 0.03
 author:
   - 'Paul Evans E<lt>leonerd@leonerd.org.ukE<gt>'
 abstract: Asynchronous HTTP user agent
@@ -10,7 +10,7 @@ resources:
 requires:
   HTTP::Request: 0
   HTTP::Response: 0
-  IO::Async: 0.16
+  IO::Async: 0.17
 build_requires:
   IO::Async::Sequencer: 0
   IO::Async::Test: 0
@@ -18,10 +18,10 @@ build_requires:
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: 0.02
+    version: 0.03
   Net::Async::HTTP::Client:
     file: lib/Net/Async/HTTP/Client.pm
-    version: 0.02
+    version: 0.03
 generated_by: Module::Build version 0.280801
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
