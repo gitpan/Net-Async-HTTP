@@ -8,5 +8,8 @@ META.yml
 t/00use.t
 t/01http-req.t
 t/02http-uri.t
+t/03http-legacyloop.t
 t/10http-pipeline.t
 t/11http-redir.t
+README
+LICENSE

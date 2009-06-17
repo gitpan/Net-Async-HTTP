@@ -1,5 +1,10 @@
 Revision history for Net-Async-HTTP
 
+0.04    CHANGES:
+         * Added 'use warnings'
+         * Updated to IO::Async 0.21 style
+         * Various small documentation and test script updates
+
 0.03    CHANGES:
          * Support server-local HTTP redirects
 

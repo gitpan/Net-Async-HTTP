@@ -14,9 +14,9 @@ my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
 my $loop = IO::Async::Loop->new();
 testing_loop( $loop );
 
-my $http = Net::Async::HTTP->new(
-   loop => $loop,
-);
+my $http = Net::Async::HTTP->new();
+
+$loop->add( $http );
 
 # Most of this function copypasted from t/01http-req.t
 

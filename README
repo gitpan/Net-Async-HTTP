@@ -1,0 +1,123 @@
+NAME
+    "Net::Async::HTTP" - Asynchronous HTTP user agent
+
+SYNOPSIS
+     use IO::Async::Loop;
+     use Net::Async::HTTP;
+     use URI;
+
+     my $loop = IO::Async::Loop->new();
+
+     my $http = Net::Async::HTTP->new();
+
+     $loop->add( $http );
+
+     $http->do_request(
+        uri => URI->new( "http://www.cpan.org/" ),
+
+        on_response => sub {
+           my ( $response ) = @_;
+           print "Front page of http://www.cpan.org/ is:\n";
+           print $response->as_string;
+           $loop->loop_stop;
+        },
+
+        on_error => sub {
+           my ( $message ) = @_;
+           print "Cannot fetch http://www.cpan.org/ - $message\n";
+           $loop->loop_stop;
+        },
+     );
+
+     $loop->loop_forever;
+
+DESCRIPTION
+    This object class implements an asynchronous HTTP user agent. It sends
+    requests to servers, and invokes continuation callbacks when responses
+    are received. The object supports multiple concurrent connections to
+    servers, and allows multiple outstanding requests in pipeline to any one
+    connection. Normally, only one such object will be needed per program to
+    support any number of requests.
+
+PARAMETERS
+    The following named parameters may be passed to "new" or "configure":
+
+    user_agent => STRING
+            A string to set in the "User-Agent" HTTP header. If not
+            supplied, one will be constructed that declares
+            "Net::Async::HTTP" and the version number.
+
+    max_redirects => INT
+            Optional. How many levels of redirection to follow. If not
+            supplied, will default to 3. Give 0 to disable redirection
+            entirely.
+
+METHODS
+  $http->do_request( %args )
+    Send an HTTP request to a server, and set up the callbacks to receive a
+    reply. The request may be represented by an "HTTP::Request" object, or a
+    "URI" object, depending on the arguments passed.
+
+    The following named arguments are used for "HTTP::Request"s:
+
+    request => HTTP::Request
+            A reference to an "HTTP::Request" object
+
+    host => STRING
+    port => INT
+            Hostname and port number of the server to connect to
+
+    The following named arguments are used for "URI" requests:
+
+    uri => URI
+            A reference to a "URI" object
+
+    method => STRING
+            Optional. The HTTP method. If missing, "GET" is used.
+
+    content => STRING
+            Optional. The body content to use for "POST" requests.
+
+    user => STRING
+    pass => STRING
+            Optional. If both are given, the HTTP Basic Authorization header
+            will be sent with these details.
+
+    proxy_host => STRING
+    proxy_port => INT
+            Optional. Override the hostname or port number implied by the
+            URI.
+
+    For either request type, it takes the following continuation callbacks:
+
+    on_response => CODE
+            A callback that is invoked when a response to this request has
+            been received. It will be passed an HTTP::Response object
+            containing the response the server sent.
+
+             $on_response->( $response )
+
+    on_error => CODE
+            A callback that is invoked if an error occurs while trying to
+            send the request or obtain the response. It will be passed an
+            error message.
+
+             $on_error->( $message )
+
+    on_redirect => CODE
+            Optional. A callback that is invoked if a redirect response is
+            received, before the new location is fetched. It will be passed
+            the response and the new URL.
+
+             $on_redirect->( $response, $location )
+
+    max_redirects => INT
+            Optional. How many levels of redirection to follow. If not
+            supplied, will default to the value given in the constructor.
+
+SEE ALSO
+    *   RFC 2616 - Hypertext Transfer Protocol -- HTTP/1.1
+
+AUTHOR
+    Paul Evans <leonerd@leonerd.org.uk>
+

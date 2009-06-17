@@ -6,8 +6,13 @@
 package Net::Async::HTTP;
 
 use strict;
+use warnings;
+use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
+
+our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
+our $DEFAULT_MAXREDIR = 3;
 
 use Carp;
 
@@ -24,13 +29,15 @@ C<Net::Async::HTTP> - Asynchronous HTTP user agent
 
 =head1 SYNOPSIS
 
- use IO::Async::Loop::...;
+ use IO::Async::Loop;
  use Net::Async::HTTP;
  use URI;
 
- my $loop = IO::Async::Loop::...;
+ my $loop = IO::Async::Loop->new();
 
- my $http = Net::Async::HTTP->new( loop => $loop );
+ my $http = Net::Async::HTTP->new();
+
+ $loop->add( $http );
 
  $http->do_request(
     uri => URI->new( "http://www.cpan.org/" ),
@@ -62,20 +69,32 @@ number of requests.
 
 =cut
 
-=head1 CONSTRUCTOR
+sub new
+{
+   my $class = shift;
+   my %args = @_;
 
-=cut
+   my $loop = delete $args{loop};
 
-=head2 $http = Net::Async::HTTP->new( %args )
+   my $self = $class->SUPER::new( %args );
 
-This function returns a new instance of a C<Net::Async::HTTP> object. It takes
-the following named arguments:
+   $loop->add( $self ) if $loop;
+
+   return $self;
+}
+
+sub _init
+{
+   my $self = shift;
+
+   $self->{connections} = {}; # { "$host:$port" } -> [ $conn, @pending_onread ]
+}
+
+=head1 PARAMETERS
+
+The following named parameters may be passed to C<new> or C<configure>:
 
 =over 8
-
-=item loop => IO::Async::Loop
-
-A reference to an C<IO::Async::Loop> object.
 
 =item user_agent => STRING
 
@@ -91,25 +110,19 @@ default to 3. Give 0 to disable redirection entirely.
 
 =cut
 
-sub new
+sub configure
 {
-   my $class = shift;
-   my %args = @_;
+   my $self = shift;
+   my %params = @_;
 
-   my $loop = delete $args{loop} or croak "Need a 'loop'";
+   foreach (qw( user_agent max_redirects )) {
+      $self->{$_} = delete $params{$_} if exists $params{$_};
+   }
 
-   my $self = bless {
-      loop => $loop,
+   $self->SUPER::configure( %params );
 
-      connections => {}, # { "$host:$port" } -> [ $conn, @pending_onread ]
-
-      user_agent => defined $args{user_agent} ? $args{user_agent}
-                                              : "Perl + " . __PACKAGE__ . "/$VERSION",
-
-      max_redirects => defined $args{max_redirects} ? $args{max_redirects} : 3,
-   }, $class;
-
-   return $self;
+   defined $self->{user_agent}    or $self->{user_agent} = $DEFAULT_UA;
+   defined $self->{max_redirects} or $self->{max_redirects} = $DEFAULT_MAXREDIR;
 }
 
 =head1 METHODS
@@ -124,7 +137,7 @@ sub get_connection
    my $on_ready = $args{on_ready} or croak "Expected 'on_ready' as a CODE ref";
    my $on_error = $args{on_error} or croak "Expected 'on_error' as a CODE ref";
 
-   my $loop = $self->{loop};
+   my $loop = $self->get_loop or croak "Cannot ->get_connection without a Loop";
 
    my $host = $args{host};
    my $port = $args{port};
@@ -153,7 +166,7 @@ sub get_connection
 
       $cr = $self->{connections}->{"$host:$port"} = [ $conn ];
 
-      $loop->add( $conn );
+      $self->add_child( $conn );
 
       $on_read = $on_ready->( $conn );
 
@@ -431,4 +444,4 @@ L<RFC 2616|http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol
 
 =head1 AUTHOR
 
-Paul Evans E<lt>leonerd@leonerd.org.ukE<gt>
+Paul Evans <leonerd@leonerd.org.uk>

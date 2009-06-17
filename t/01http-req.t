@@ -15,12 +15,13 @@ my $loop = IO::Async::Loop->new();
 testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
-   loop => $loop,
    user_agent => "", # Don't put one in request headers
 );
 
 ok( defined $http, 'defined $http' );
-is( ref $http, "Net::Async::HTTP", 'ref $http is Net::Async::HTTP' );
+isa_ok( $http, "Net::Async::HTTP", '$http isa Net::Async::HTTP' );
+
+$loop->add( $http );
 
 sub do_test_req
 {

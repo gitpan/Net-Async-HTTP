@@ -15,9 +15,10 @@ my $loop = IO::Async::Loop->new();
 testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
-   loop => $loop,
    user_agent => "", # Don't put one in request headers
 );
+
+$loop->add( $http );
 
 my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
 
