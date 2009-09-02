@@ -1,15 +1,17 @@
 Build.PL
 Changes
+examples/GET.pl
 lib/Net/Async/HTTP.pm
 lib/Net/Async/HTTP/Client.pm
+LICENSE
 Makefile.PL
 MANIFEST			This list of files
 META.yml
+README
 t/00use.t
 t/01http-req.t
 t/02http-uri.t
 t/03http-legacyloop.t
 t/10http-pipeline.t
 t/11http-redir.t
-README
-LICENSE
+t/99pod.t

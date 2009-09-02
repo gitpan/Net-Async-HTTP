@@ -7,9 +7,12 @@ my $build = Module::Build->new
   (
    module_name => 'Net::Async::HTTP',
    requires => {
-                 'IO::Async'      => '0.17',
-                 'HTTP::Request'  => 0,
-                 'HTTP::Response' => 0,
+                 'HTTP::Request'         => 0,
+                 'HTTP::Request::Common' => 0,
+                 'HTTP::Response'        => 0,
+                 'IO::Async::Loop'       => '0.21',
+                 'IO::Async::Stream'     => 0,
+                 'URI'                   => 0,
    },
    build_requires => {
                         'IO::Async::Sequencer' => 0,

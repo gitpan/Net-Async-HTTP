@@ -1,5 +1,12 @@
 Revision history for Net-Async-HTTP
 
+0.05    CHANGES:
+         * Added Test::Pod testing
+         * Created example wget-style script
+         * Documentation neatening
+         * More accurate 'requires' in Build.PL; hopefully to keep CPANTS
+           happy
+
 0.04    CHANGES:
          * Added 'use warnings'
          * Updated to IO::Async 0.21 style

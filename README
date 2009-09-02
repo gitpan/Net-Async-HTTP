@@ -55,8 +55,8 @@ PARAMETERS
 METHODS
   $http->do_request( %args )
     Send an HTTP request to a server, and set up the callbacks to receive a
-    reply. The request may be represented by an "HTTP::Request" object, or a
-    "URI" object, depending on the arguments passed.
+    reply. The request may be represented by an HTTP::Request object, or a
+    URI object, depending on the arguments passed.
 
     The following named arguments are used for "HTTP::Request"s:
 
@@ -116,7 +116,8 @@ METHODS
             supplied, will default to the value given in the constructor.
 
 SEE ALSO
-    *   RFC 2616 - Hypertext Transfer Protocol -- HTTP/1.1
+    *   <http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol
+        -- HTTP/1.1
 
 AUTHOR
     Paul Evans <leonerd@leonerd.org.uk>

@@ -6,11 +6,14 @@ WriteMakefile
           'VERSION_FROM' => 'lib/Net/Async/HTTP.pm',
           'PREREQ_PM' => {
                            'HTTP::Request' => 0,
+                           'HTTP::Request::Common' => 0,
                            'HTTP::Response' => 0,
-                           'IO::Async' => '0.17',
+                           'IO::Async::Loop' => '0.21',
                            'IO::Async::Sequencer' => 0,
+                           'IO::Async::Stream' => 0,
                            'IO::Async::Test' => 0,
-                           'Test::More' => 0
+                           'Test::More' => 0,
+                           'URI' => 0
                          },
           'INSTALLDIRS' => 'site',
           'EXE_FILES' => [],

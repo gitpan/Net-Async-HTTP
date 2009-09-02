@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008,2009 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -196,7 +196,7 @@ sub get_connection
 =head2 $http->do_request( %args )
 
 Send an HTTP request to a server, and set up the callbacks to receive a reply.
-The request may be represented by an C<HTTP::Request> object, or a C<URI>
+The request may be represented by an L<HTTP::Request> object, or a L<URI>
 object, depending on the arguments passed.
 
 The following named arguments are used for C<HTTP::Request>s:
@@ -437,8 +437,7 @@ __END__
 
 =item *
 
-L<RFC 2616|http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol
--- HTTP/1.1
+L<http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol -- HTTP/1.1
 
 =back
 
