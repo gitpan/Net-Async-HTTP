@@ -75,8 +75,14 @@ METHODS
     method => STRING
             Optional. The HTTP method. If missing, "GET" is used.
 
-    content => STRING
-            Optional. The body content to use for "POST" requests.
+    content => STRING or ARRAY ref
+            Optional. The body content to use for "POST" requests. If this
+            is a plain scalar instead of an ARRAY ref, it will not be form
+            encoded. In this case, a "content_type" field must also be
+            supplied to describe it.
+
+    content_type => STRING
+            The type of non-form data "content".
 
     user => STRING
     pass => STRING

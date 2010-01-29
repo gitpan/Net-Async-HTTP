@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.06    CHANGES:
+         * When POSTing content that isn't form data, expect to be given its
+           content type
+
 0.05    CHANGES:
          * Added Test::Pod testing
          * Created example wget-style script

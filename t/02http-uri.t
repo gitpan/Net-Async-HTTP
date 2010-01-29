@@ -38,6 +38,7 @@ sub do_test_uri
       user    => $args{user},
       pass    => $args{pass},
       content => $args{content},
+      content_type => $args{content_type},
       handle  => $S1,
 
       on_response => sub { $response = $_[0] },
@@ -224,12 +225,13 @@ do_test_uri( "simple POST",
    method  => "POST",
    uri     => URI->new( "http://somewhere/handler" ),
    content => "New content",
+   content_type => "text/plain",
 
    expect_req_firstline => "POST /handler HTTP/1.1",
    expect_req_headers => {
       Host => "somewhere",
       'Content-Length' => 11,
-      'Content-Type' => "application/x-www-form-urlencoded",
+      'Content-Type' => "text/plain",
    },
    expect_req_content => "New content",
 

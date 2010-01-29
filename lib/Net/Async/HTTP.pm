@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008,2009 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2010 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -227,9 +227,15 @@ A reference to a C<URI> object
 
 Optional. The HTTP method. If missing, C<GET> is used.
 
-=item content => STRING
+=item content => STRING or ARRAY ref
 
-Optional. The body content to use for C<POST> requests.
+Optional. The body content to use for C<POST> requests. If this is a plain
+scalar instead of an ARRAY ref, it will not be form encoded. In this case, a
+C<content_type> field must also be supplied to describe it.
+
+=item content_type => STRING
+
+The type of non-form data C<content>.
 
 =item user => STRING
 
@@ -352,8 +358,14 @@ sub do_request
       $path = "/" if $path eq "";
 
       if( $method eq "POST" ) {
+         defined $args{content} or croak "Expected 'content' with POST method";
+
+         # Lack of content_type didn't used to be a failure condition:
+         ref $args{content} or defined $args{content_type} or
+            carp "No 'content_type' was given with 'content'";
+
          # This will automatically encode a form for us
-         $request = HTTP::Request::Common::POST( $path, Content => $args{content} );
+         $request = HTTP::Request::Common::POST( $path, Content => $args{content}, Content_Type => $args{content_type} );
       }
       else {
          $request = HTTP::Request->new( $method, $path );
