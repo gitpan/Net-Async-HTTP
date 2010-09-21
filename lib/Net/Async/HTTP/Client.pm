@@ -8,11 +8,11 @@ package Net::Async::HTTP::Client;
 use strict;
 use warnings;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
-use base qw( IO::Async::Sequencer );
+use base qw( IO::Async::Protocol::Stream );
 
 use HTTP::Response;
 
@@ -29,39 +29,21 @@ internally by L<Net::Async::HTTP>. It is not intended for general use.
 
 =cut
 
-sub new
-{
-   my $class = shift;
-   my %args = @_;
-
-   $args{marshall_request} = \&marshall_request;
-   $args{on_read}          = \&on_read;
-
-   my $self = $class->SUPER::new( %args );
-
-   return $self;
-}
-
-# For passing in to constructor
-sub marshall_request
-{
-   my $self = shift;
-   my ( $request ) = @_;
-
-   # HTTP::Request is silly and uses "\n" as a separator. We must tell it to
-   # use the correct RFC 2616-compliant CRLF sequence.
-   return $request->as_string( $CRLF );
-}
-
-# For passing in to constructor
 sub on_read
 {
    my $self = shift;
+   my ( $buffref, $closed ) = @_;
+
+   if( my $on_read = shift @{ $self->{on_read_queue} } ) {
+      return $on_read;
+   }
+
+   # Reinvoked after switch back to baseline, but may be idle again
+   return if $closed or !length $$buffref;
 
    croak "Spurious on_read of connection while idle\n";
 }
 
-# Override
 sub request
 {
    my $self = shift;
@@ -193,10 +175,11 @@ sub request
       }
    };
 
-   $self->SUPER::request(
-      request => $req,
-      on_read => $on_read,
-   );
+   # HTTP::Request is silly and uses "\n" as a separator. We must tell it to
+   # use the correct RFC 2616-compliant CRLF sequence.
+   $self->write( $req->as_string( $CRLF ) );
+
+   push @{ $self->{on_read_queue} }, $on_read;
 }
 
 # Keep perl happy; keep Britain tidy

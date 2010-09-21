@@ -1,5 +1,8 @@
 Revision history for Net-Async-HTTP
 
+0.07    CHANGES:
+         * base on IO::Async::Protocol::Stream
+
 0.06    CHANGES:
          * When POSTing content that isn't form data, expect to be given its
            content type
