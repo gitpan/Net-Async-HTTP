@@ -1,5 +1,5 @@
 NAME
-    "Net::Async::HTTP" - Asynchronous HTTP user agent
+    "Net::Async::HTTP" - Use HTTP with "IO::Async"
 
 SYNOPSIS
      use IO::Async::Loop;
@@ -39,6 +39,10 @@ DESCRIPTION
     connection. Normally, only one such object will be needed per program to
     support any number of requests.
 
+    This module optionally supports SSL connections, if IO::Async::SSL is
+    installed. If so, SSL can be requested either by passing a URI with the
+    "https" scheme, or by passing the a true value as the "SSL" parameter.
+
 PARAMETERS
     The following named parameters may be passed to "new" or "configure":
 
@@ -67,10 +71,14 @@ METHODS
     port => INT
             Hostname and port number of the server to connect to
 
+    SSL => BOOL
+            Optional. If true, an SSL connection will be used.
+
     The following named arguments are used for "URI" requests:
 
     uri => URI
-            A reference to a "URI" object
+            A reference to a "URI" object. If the scheme is "https" then an
+            SSL connection will be used.
 
     method => STRING
             Optional. The HTTP method. If missing, "GET" is used.
@@ -102,6 +110,18 @@ METHODS
             containing the response the server sent.
 
              $on_response->( $response )
+
+    on_header => CODE
+            Alternative to "on_response". A callback that is invoked when
+            the header of a response has been received. It is expected to
+            return a "CODE" reference for handling chunks of body content.
+            This "CODE" reference will be invoked with no arguments once the
+            end of the request has been reached.
+
+             $on_body_chunk = $on_header->( $header )
+
+                $on_body_chunk->( $data )
+                $on_body_chunk->()
 
     on_error => CODE
             A callback that is invoked if an error occurs while trying to

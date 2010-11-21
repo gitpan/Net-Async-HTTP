@@ -8,7 +8,7 @@ WriteMakefile
                            'HTTP::Request' => 0,
                            'HTTP::Request::Common' => 0,
                            'HTTP::Response' => 0,
-                           'IO::Async::Loop' => '0.21',
+                           'IO::Async::Loop' => '0.30',
                            'IO::Async::Protocol::Stream' => 0,
                            'IO::Async::Stream' => 0,
                            'IO::Async::Test' => 0,

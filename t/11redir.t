@@ -5,7 +5,6 @@ use strict;
 use Test::More tests => 10;
 use IO::Async::Test;
 use IO::Async::Loop;
-use IO::Async::Stream;
 
 use Net::Async::HTTP;
 

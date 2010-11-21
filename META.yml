@@ -1,5 +1,5 @@
 ---
-abstract: 'Asynchronous HTTP user agent'
+abstract: 'Use HTTP with C<IO::Async>'
 author:
   - 'Paul Evans <leonerd@leonerd.org.uk>'
 build_requires:
@@ -16,18 +16,18 @@ name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: 0.07
-  Net::Async::HTTP::Client:
-    file: lib/Net/Async/HTTP/Client.pm
-    version: 0.07
+    version: 0.08
+  Net::Async::HTTP::Protocol:
+    file: lib/Net/Async/HTTP/Protocol.pm
+    version: 0.08
 requires:
   HTTP::Request: 0
   HTTP::Request::Common: 0
   HTTP::Response: 0
-  IO::Async::Loop: 0.21
+  IO::Async::Loop: 0.30
   IO::Async::Protocol::Stream: 0
   IO::Async::Stream: 0
   URI: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.07
+version: 0.08

@@ -9,23 +9,26 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
 
 use Carp;
 
-use Net::Async::HTTP::Client;
+use Net::Async::HTTP::Protocol;
 
 use HTTP::Request;
 use HTTP::Request::Common qw();
+
+use IO::Async::Stream;
+use IO::Async::Loop 0.30; # for ->connect( on_stream )
 
 use Socket qw( SOCK_STREAM );
 
 =head1 NAME
 
-C<Net::Async::HTTP> - Asynchronous HTTP user agent
+C<Net::Async::HTTP> - Use HTTP with C<IO::Async>
 
 =head1 SYNOPSIS
 
@@ -66,6 +69,10 @@ received. The object supports multiple concurrent connections to servers, and
 allows multiple outstanding requests in pipeline to any one connection.
 Normally, only one such object will be needed per program to support any
 number of requests.
+
+This module optionally supports SSL connections, if L<IO::Async::SSL> is
+installed. If so, SSL can be requested either by passing a URI with the
+C<https> scheme, or by passing the a true value as the C<SSL> parameter.
 
 =cut
 
@@ -151,7 +158,7 @@ sub get_connection
    }
 
    if( $args{transport} ) {
-      my $conn = Net::Async::HTTP::Client->new(
+      my $conn = Net::Async::HTTP::Protocol->new(
          transport => $args{transport},
 
          on_closed => sub {
@@ -168,7 +175,23 @@ sub get_connection
       return;
    }
 
-   $loop->connect(
+   my $method = "connect";
+   my %extra_args;
+
+   if( $args{SSL} ) {
+      require IO::Async::SSL;
+      IO::Async::SSL->VERSION( 0.04 );
+
+      $method = "SSL_connect";
+
+      $extra_args{on_ssl_error} = sub {
+         $on_error->( "$host:$port SSL error [$_[0]]" );
+      };
+
+      $extra_args{$_} = delete $args{$_} for grep m/^SSL_/, keys %args;
+   }
+
+   $loop->$method(
       host     => $host,
       service  => $port,
       socktype => SOCK_STREAM,
@@ -181,13 +204,13 @@ sub get_connection
          $on_error->( "$host:$port not contactable" );
       },
 
-      on_connected => sub {
-         my ( $sock ) = @_;
+      on_stream => sub {
+         my ( $stream ) = @_;
 
-         my $transport = IO::Async::Stream->new( handle => $sock );
-
-         $self->get_connection( %args, transport => $transport );
+         $self->get_connection( %args, transport => $stream );
       },
+
+      %extra_args,
    );
 }
 
@@ -211,6 +234,10 @@ A reference to an C<HTTP::Request> object
 
 Hostname and port number of the server to connect to
 
+=item SSL => BOOL
+
+Optional. If true, an SSL connection will be used.
+
 =back
 
 The following named arguments are used for C<URI> requests:
@@ -219,7 +246,8 @@ The following named arguments are used for C<URI> requests:
 
 =item uri => URI
 
-A reference to a C<URI> object
+A reference to a C<URI> object. If the scheme is C<https> then an SSL
+connection will be used.
 
 =item method => STRING
 
@@ -262,6 +290,18 @@ server sent.
 
  $on_response->( $response )
 
+=item on_header => CODE
+
+Alternative to C<on_response>. A callback that is invoked when the header of a
+response has been received. It is expected to return a C<CODE> reference for
+handling chunks of body content. This C<CODE> reference will be invoked with
+no arguments once the end of the request has been reached.
+
+ $on_body_chunk = $on_header->( $header )
+
+    $on_body_chunk->( $data )
+    $on_body_chunk->()
+
 =item on_error => CODE
 
 A callback that is invoked if an error occurs while trying to send the request
@@ -291,19 +331,32 @@ sub do_request
    my $self = shift;
    my %args = @_;
 
-   my $on_response = $args{on_response} or croak "Expected 'on_response' as a CODE ref";
+   my $on_response = $args{on_response} or
+      my $on_header = $args{on_header}  or croak "Expected 'on_response' or 'on_header' as CODE ref";
    my $on_error    = $args{on_error}    or croak "Expected 'on_error' as a CODE ref";
 
    my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
 
    my $host;
    my $port;
+   my $ssl;
 
-   # Now build a new on_response continuation that has all the redirect logic
-   my $on_resp_redir = sub {
+   my $on_header_redir = sub {
       my ( $response ) = @_;
 
-      if( $response->is_redirect and $max_redirects > 0 ) {
+      if( !$response->is_redirect or $max_redirects == 0 ) {
+         return $on_header->( $response ) if $on_header;
+         return sub {
+            return $on_response->( $response ) unless @_;
+
+            $response->add_content( @_ );
+         };
+      }
+
+      # Ignore body but handle redirect at the end of it
+      return sub {
+         return if @_;
+
          my $location = $response->header( "Location" );
 
          if( $location =~ m{^http://} ) {
@@ -332,9 +385,6 @@ sub do_request
             max_redirects => $max_redirects - 1,
          );
       }
-      else {
-         $on_response->( $response );
-      }
    };
 
    my $request;
@@ -342,6 +392,7 @@ sub do_request
    if( $args{request} ) {
       $request = delete $args{request};
       ref $request and $request->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
+      $ssl = $args{SSL};
    }
    elsif( $args{uri} ) {
       my $uri = delete $args{uri};
@@ -352,6 +403,8 @@ sub do_request
       $host = $uri->host;
       $port = $uri->port;
       my $path = $uri->path_query;
+
+      $ssl = ( $uri->scheme eq "https" );
 
       $path = "/" if $path eq "";
 
@@ -405,8 +458,8 @@ sub do_request
             my ( $conn ) = @_;
             $conn->request(
                request => $request,
-               on_response => $on_resp_redir,
-               on_error    => $on_error,
+               on_header => $on_header_redir,
+               on_error  => $on_error,
             );
          },
       );
@@ -423,6 +476,7 @@ sub do_request
       $self->get_connection(
          host => $args{proxy_host} || $host,
          port => $args{proxy_port} || $port,
+         SSL  => $ssl,
 
          on_error => $on_error,
 
@@ -430,8 +484,8 @@ sub do_request
             my ( $conn ) = @_;
             $conn->request(
                request => $request,
-               on_response => $on_resp_redir,
-               on_error    => $on_error,
+               on_header => $on_header_redir,
+               on_error  => $on_error,
             );
          },
       );
