@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2011 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -22,7 +22,7 @@ use HTTP::Request;
 use HTTP::Request::Common qw();
 
 use IO::Async::Stream;
-use IO::Async::Loop 0.30; # for ->connect( on_stream )
+use IO::Async::Loop 0.31; # for ->connect( extensions )
 
 use Socket qw( SOCK_STREAM );
 
@@ -141,13 +141,13 @@ sub get_connection
    my $self = shift;
    my %args = @_;
 
-   my $on_ready = $args{on_ready} or croak "Expected 'on_ready' as a CODE ref";
-   my $on_error = $args{on_error} or croak "Expected 'on_error' as a CODE ref";
+   my $on_ready = delete $args{on_ready} or croak "Expected 'on_ready' as a CODE ref";
+   my $on_error = delete $args{on_error} or croak "Expected 'on_error' as a CODE ref";
 
    my $loop = $self->get_loop or croak "Cannot ->get_connection without a Loop";
 
-   my $host = $args{host};
-   my $port = $args{port};
+   my $host = delete $args{host};
+   my $port = delete $args{port};
 
    if( my $cr = $self->{connections}->{"$host:$port"} ) {
       my ( $conn ) = @$cr;
@@ -157,44 +157,31 @@ sub get_connection
       return;
    }
 
-   if( $args{transport} ) {
-      my $conn = Net::Async::HTTP::Protocol->new(
-         transport => $args{transport},
+   my $connections = $self->{connections};
 
-         on_closed => sub {
-            delete $self->{connections}->{"$host:$port"};
-         },
-      );
+   my $conn = Net::Async::HTTP::Protocol->new(
+      on_closed => sub {
+         delete $connections->{"$host:$port"};
+      },
+   );
+   $self->add_child( $conn );
 
-      $self->{connections}->{"$host:$port"} = [ $conn ];
-
-      $self->add_child( $conn );
-
-      $on_ready->( $conn );
-
-      return;
-   }
-
-   my $method = "connect";
-   my %extra_args;
+   $connections->{"$host:$port"} = [ $conn ];
 
    if( $args{SSL} ) {
       require IO::Async::SSL;
       IO::Async::SSL->VERSION( 0.04 );
 
-      $method = "SSL_connect";
+      push @{ $args{extensions} }, "SSL";
 
-      $extra_args{on_ssl_error} = sub {
+      $args{on_ssl_error} = sub {
          $on_error->( "$host:$port SSL error [$_[0]]" );
       };
-
-      $extra_args{$_} = delete $args{$_} for grep m/^SSL_/, keys %args;
    }
 
-   $loop->$method(
+   $conn->connect(
       host     => $host,
       service  => $port,
-      socktype => SOCK_STREAM,
 
       on_resolve_error => sub {
          $on_error->( "$host:$port not resolvable [$_[0]]" );
@@ -204,13 +191,12 @@ sub get_connection
          $on_error->( "$host:$port not contactable" );
       },
 
-      on_stream => sub {
-         my ( $stream ) = @_;
+      on_connected => sub {
 
-         $self->get_connection( %args, transport => $stream );
+         $on_ready->( $conn );
       },
 
-      %extra_args,
+      %args,
    );
 }
 

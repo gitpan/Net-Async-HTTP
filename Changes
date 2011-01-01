@@ -1,5 +1,8 @@
 Revision history for Net-Async-HTTP
 
+0.09    CHANGES:
+         * Use IO::Async::Protocol->connect from 0.34
+
 0.08    CHANGES:
          * Support streaming of response body content
          * Support SSL if IO::Async::SSL is installed
