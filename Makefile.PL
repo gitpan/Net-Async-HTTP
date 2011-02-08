@@ -5,6 +5,7 @@ WriteMakefile
           'NAME' => 'Net::Async::HTTP',
           'VERSION_FROM' => 'lib/Net/Async/HTTP.pm',
           'PREREQ_PM' => {
+                           'HTTP::Cookies' => 0,
                            'HTTP::Request' => 0,
                            'HTTP::Request::Common' => 0,
                            'HTTP::Response' => 0,
@@ -12,6 +13,7 @@ WriteMakefile
                            'IO::Async::Protocol::Stream' => '0.34',
                            'IO::Async::Stream' => 0,
                            'IO::Async::Test' => 0,
+                           'Test::Identity' => 0,
                            'Test::More' => 0,
                            'URI' => 0
                          },

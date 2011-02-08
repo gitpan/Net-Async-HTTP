@@ -15,7 +15,9 @@ my $build = Module::Build->new(
       'URI' => 0,
    },
    build_requires => {
+      'HTTP::Cookies' => 0,
       'IO::Async::Test' => 0,
+      'Test::Identity' => 0,
       'Test::More' => 0,
    },
    license => 'perl',

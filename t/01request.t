@@ -1,8 +1,10 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 
 use strict;
+use warnings;
 
-use Test::More tests => 45;
+use Test::More tests => 59;
+use Test::Identity;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -32,8 +34,10 @@ sub do_test_req
    my $response;
    my $error;
 
+   my $request = $args{req};
+
    $http->do_request(
-      request => $args{req},
+      request => $request,
       handle  => $S1,
 
       on_response => sub { $response = $_[0] },
@@ -71,6 +75,8 @@ sub do_test_req
 
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };
+
+   identical( $response->request, $request, "\$response->request is \$request for $name" );
 
    if( $args{expect_error} ) {
       ok( defined $error, "Expected error for $name" );
@@ -278,3 +284,25 @@ do_test_req( "simple POST",
    expect_res_content => "New content",
 );
 
+$req = HTTP::Request->new( PUT => "/handler", [ Host => "somewhere" ], "New content" );
+$req->protocol( "HTTP/1.1" );
+
+do_test_req( "simple PUT",
+   req => $req,
+
+   expect_req_firstline => "PUT /handler HTTP/1.1",
+   expect_req_headers => {
+      Host => "somewhere",
+      'Content-Length' => 11,
+   },
+   expect_req_content => "New content",
+
+   response => "HTTP/1.1 201 Created$CRLF" . 
+               "Content-Length: 0$CRLF" .
+               $CRLF,
+
+   expect_res_code    => 201,
+   expect_res_headers => {
+      'Content-Length' => 0,
+   },
+);

@@ -1,6 +1,8 @@
 Build.PL
 Changes
 examples/GET.pl
+examples/parallel-put.pl
+examples/PUT.pl
 lib/Net/Async/HTTP.pm
 lib/Net/Async/HTTP/Protocol.pm
 LICENSE
@@ -12,9 +14,12 @@ t/00use.t
 t/01request.t
 t/02uri.t
 t/03legacyloop.t
+t/04prepareprocess.t
+t/05cookies.t
 t/10pipeline.t
 t/11redir.t
-t/12streaming.t
+t/12request-streaming.t
+t/13response-streaming.t
 t/20local-connect.t
 t/21local-connect-ssl.t
 t/99pod.t

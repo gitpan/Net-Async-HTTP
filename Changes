@@ -1,5 +1,11 @@
 Revision history for Net-Async-HTTP
 
+0.10    CHANGES:
+         * Support streaming of request body content
+         * Support HTTP::Cookies object as a cookie jar
+         * Allow proxy_host and proxy_port as ->configure parameters, to set
+           defaults for requests
+
 0.09    CHANGES:
          * Use IO::Async::Protocol->connect from 0.34
 

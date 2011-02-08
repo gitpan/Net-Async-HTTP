@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2011 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP::Protocol;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 use Carp;
 
@@ -54,6 +54,8 @@ sub request
    
    my $req = $args{request};
    ref $req and $req->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
+
+   my $request_body = $args{request_body};
 
    my $method = $req->method;
 
@@ -180,6 +182,8 @@ sub request
    # HTTP::Request is silly and uses "\n" as a separator. We must tell it to
    # use the correct RFC 2616-compliant CRLF sequence.
    $self->write( $req->as_string( $CRLF ) );
+
+   $self->write( $request_body ) if $request_body;
 
    push @{ $self->{on_read_queue} }, $on_read;
 }
