@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.11    BUGFIXES:
+         * Fix stalling t/12request-streaming.t test script that causes lots
+           of FAILs at test time
+
 0.10    CHANGES:
          * Support streaming of request body content
          * Support HTTP::Cookies object as a cookie jar

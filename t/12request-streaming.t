@@ -28,13 +28,25 @@ $req->content_length( 21 ); # set this manually based on what we plan to send
 
 my $response;
 
+my $done = 0;
 $http->do_request(
    request => $req,
    handle => $S1,
 
    request_body => sub {
-      pass("Callback after headers sent");
-      return "Content from callback";
+      if( !$done ) {
+         pass( "Callback after headers sent" );
+         $done++;
+         return "Content from callback";
+      }
+      elsif( $done == 1 ) {
+         pass( "Second request seen, returning undef" );
+         $done++;
+         return undef;
+      }
+      else {
+         fail( "called request_body too many times" );
+      }
    },
 
    on_response => sub { $response = $_[0] },
@@ -64,7 +76,7 @@ is_deeply( \%req_headers,
 
 my $req_content;
 if( defined( my $len = $req_headers{'Content-Length'} ) ) {
-   wait_for { length( $request_stream ) >= $len };
+   wait_for_stream { length( $request_stream ) >= $len } $S2 => $request_stream;
 
    $req_content = substr( $request_stream, 0, $len );
    substr( $request_stream, 0, $len ) = "";
