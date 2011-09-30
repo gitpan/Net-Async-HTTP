@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 59;
+use Test::More tests => 66;
 use Test::Identity;
 use IO::Async::Test;
 use IO::Async::Loop;
@@ -134,6 +134,31 @@ $req = HTTP::Request->new( GET => "/some/path", [ Host => "myhost" ] );
 $req->protocol( "HTTP/1.1" );
 
 do_test_req( "simple GET",
+   req => $req,
+
+   expect_req_firstline => "GET /some/path HTTP/1.1",
+   expect_req_headers => {
+      Host => "myhost",
+   },
+
+   response => "HTTP/1.1 200 OK$CRLF" . 
+               "Content-Length: 13$CRLF" . 
+               "Content-Type: text/plain$CRLF" .
+               $CRLF . 
+               "Hello, world!",
+
+   expect_res_code    => 200,
+   expect_res_headers => {
+      'Content-Length' => 13,
+      'Content-Type'   => "text/plain",
+   },
+   expect_res_content => "Hello, world!",
+);
+
+$req = HTTP::Request->new( GET => "http://myhost/some/path" );
+$req->protocol( "HTTP/1.1" );
+
+do_test_req( "GET to full URL",
    req => $req,
 
    expect_req_firstline => "GET /some/path HTTP/1.1",

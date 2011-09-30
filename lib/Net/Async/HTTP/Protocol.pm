@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 
@@ -28,6 +28,35 @@ This class provides a connection to a single HTTP server, and is used
 internally by L<Net::Async::HTTP>. It is not intended for general use.
 
 =cut
+
+sub connect
+{
+   my $self = shift;
+   $self->SUPER::connect(
+      @_,
+
+      on_connected => sub {
+         my $self = shift;
+
+         if( my $queue = delete $self->{on_ready_queue} ) {
+            $_->( $self ) for @$queue;
+         }
+      },
+   );
+}
+
+sub run_when_ready
+{
+   my $self = shift;
+   my ( $on_ready ) = @_;
+
+   if( $self->transport ) {
+      $on_ready->( $self );
+   }
+   else {
+      push @{ $self->{on_ready_queue} }, $on_ready;
+   }
+}
 
 sub on_read
 {
@@ -179,20 +208,37 @@ sub request
       }
    };
 
-   # HTTP::Request is silly and uses "\n" as a separator. We must tell it to
-   # use the correct RFC 2616-compliant CRLF sequence.
-   $self->write( $req->as_string( $CRLF ) );
+   # Unless the request method is CONNECT, the URL is not allowed to contain
+   # an authority; only path
+   # Take a copy of the headers since we'll be hacking them up
+   my $headers = $req->headers->clone;
+   my $path;
+   if( $method eq "CONNECT" ) {
+      $path = $req->uri->as_string;
+   }
+   else {
+      my $uri = $req->uri;
+      $path = $uri->path_query;
+      $path = "/$path" unless $path =~ m{^/};
+      $headers->init_header( Host => $uri->authority );
+   }
+
+   my @headers = ( "$method $path " . $req->protocol );
+   $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
+
+   $self->write( join( $CRLF, @headers ) .
+                 $CRLF . $CRLF .
+                 $req->content );
 
    $self->write( $request_body ) if $request_body;
 
    push @{ $self->{on_read_queue} }, $on_read;
 }
 
-# Keep perl happy; keep Britain tidy
-1;
-
-__END__
-
 =head1 AUTHOR
 
 Paul Evans <leonerd@leonerd.org.uk>
+
+=cut
+
+0x55AA;

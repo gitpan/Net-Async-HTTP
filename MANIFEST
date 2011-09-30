@@ -22,6 +22,8 @@ t/12request-streaming.t
 t/13response-streaming.t
 t/20local-connect.t
 t/21local-connect-ssl.t
+t/22local-connect-concurrent.t
 t/99pod.t
 t/privkey.pem
 t/server.pem
+META.json

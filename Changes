@@ -1,5 +1,11 @@
 Revision history for Net-Async-HTTP
 
+0.12    BUGFIXES:
+         * Wait for connect to complete when pipelining multiple requests down
+           the same connection initially (RT66189)
+         * When serialising a request, handle a full protocol://authority URI
+           by splitting protocol/authority parts out of it
+
 0.11    BUGFIXES:
          * Fix stalling t/12request-streaming.t test script that causes lots
            of FAILs at test time
