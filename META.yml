@@ -17,10 +17,10 @@ name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: 0.12
+    version: 0.13
   Net::Async::HTTP::Protocol:
     file: lib/Net/Async/HTTP/Protocol.pm
-    version: 0.12
+    version: 0.13
 requires:
   HTTP::Request: 0
   HTTP::Request::Common: 0
@@ -31,4 +31,4 @@ requires:
   URI: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.12
+version: 0.13

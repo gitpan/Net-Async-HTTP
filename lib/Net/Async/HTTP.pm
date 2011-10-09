@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -161,20 +161,21 @@ sub get_connection
    my $port = delete $args{port};
 
    my $connections = $self->{connections};
+   my $key = "$host:$port";
 
-   if( my $conn = $connections->{"$host:$port"} ) {
+   if( my $conn = $connections->{$key} ) {
       $conn->run_when_ready( $on_ready );
       return;
    }
 
    my $conn = Net::Async::HTTP::Protocol->new(
       on_closed => sub {
-         delete $connections->{"$host:$port"};
+         delete $connections->{$key};
       },
    );
    $self->add_child( $conn );
 
-   $connections->{"$host:$port"} = $conn;
+   $connections->{$key} = $conn;
 
    if( $args{SSL} ) {
       require IO::Async::SSL;
@@ -183,6 +184,7 @@ sub get_connection
       push @{ $args{extensions} }, "SSL";
 
       $args{on_ssl_error} = sub {
+         delete $connections->{$key};
          $on_error->( "$host:$port SSL error [$_[0]]" );
       };
    }
@@ -192,10 +194,12 @@ sub get_connection
       service  => $port,
 
       on_resolve_error => sub {
+         delete $connections->{$key};
          $on_error->( "$host:$port not resolvable [$_[0]]" );
       },
 
       on_connect_error => sub {
+         delete $connections->{$key};
          $on_error->( "$host:$port not contactable" );
       },
 
@@ -338,9 +342,10 @@ sub do_request
    my $self = shift;
    my %args = @_;
 
-   my $on_response  = $args{on_response} or
-      my $on_header = $args{on_header}   or croak "Expected 'on_response' or 'on_header' as CODE ref";
-   my $on_error     = $args{on_error}    or croak "Expected 'on_error' as a CODE ref";
+   my ( $on_response, $on_header );
+   $on_response  = $args{on_response} or
+      $on_header = $args{on_header}   or croak "Expected 'on_response' or 'on_header' as CODE ref";
+   my $on_error     = $args{on_error} or croak "Expected 'on_error' as a CODE ref";
    my $request_body = $args{request_body};
 
    my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
@@ -372,7 +377,7 @@ sub do_request
 
          my $location = $response->header( "Location" );
 
-         if( $location =~ m{^http://} ) {
+         if( $location =~ m{^http(?:s?)://} ) {
             # skip
          }
          elsif( $location =~ m{^/} ) {

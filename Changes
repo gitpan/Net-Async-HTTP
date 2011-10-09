@@ -1,5 +1,12 @@
 Revision history for Net-Async-HTTP
 
+0.13    BUGFIXES:
+         * Handle redirect to https:// as well as http:// (RT71526)
+         * Fix use of conditional variable declaration that breaks on
+           Perl 5.14 (RT71545)
+         * Clean up connection cache after resolve, connect or SSL failures
+           (RT71530)
+
 0.12    BUGFIXES:
          * Wait for connect to complete when pipelining multiple requests down
            the same connection initially (RT66189)
