@@ -23,20 +23,34 @@ isa_ok( $http, "Net::Async::HTTP", '$http isa Net::Async::HTTP' );
 
 $loop->add( $http );
 
-my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
+my $peersock;
+
+no warnings 'redefine';
+local *Net::Async::HTTP::Protocol::connect = sub {
+   my $self = shift;
+   my %args = @_;
+
+   $args{host}    eq "some.server" or die "Expected $args{host} eq some.server";
+   $args{service} eq "80"          or die "Expected $args{service} eq 80";
+
+   ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+   $self->IO::Async::Protocol::connect(
+      transport => IO::Async::Stream->new( handle => $selfsock )
+   );
+};
 
 my $response;
 
 $http->do_request(
    uri => URI->new( "http://some.server/here" ),
-   handle => $S1,
 
    on_response => sub { $response = $_[0] },
    on_error    => sub { die "Test died early - $_[0]" },
 );
 
 my $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
 $request_stream =~ s/^(.*)$CRLF//;
 my $req_firstline = $1;
@@ -49,12 +63,12 @@ my %req_headers = map { m/^(.*?):\s+(.*)$/g } split( m/$CRLF/, $1 );
 
 is( $req_headers{"X-Request-Foo"}, "Bar", 'Request sets X-Request-Foo header' );
 
-$S2->syswrite( "HTTP/1.1 200 OK$CRLF" .
-               "Content-Length: 7$CRLF".
-               "Content-Type: text/plain$CRLF" .
-               "X-Response-Foo: Splot$CRLF" .
-               "$CRLF" .
-               "Blahbla" );
+$peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                     "Content-Length: 7$CRLF".
+                     "Content-Type: text/plain$CRLF" .
+                     "X-Response-Foo: Splot$CRLF" .
+                     "$CRLF" .
+                     "Blahbla" );
 
 my $response_header_X;
 

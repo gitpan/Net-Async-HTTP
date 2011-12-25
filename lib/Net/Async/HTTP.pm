@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -17,6 +17,7 @@ our $DEFAULT_MAXREDIR = 3;
 use Carp;
 
 use Net::Async::HTTP::Protocol;
+use Net::Async::HTTP::Timer;
 
 use HTTP::Request;
 use HTTP::Request::Common qw();
@@ -76,20 +77,6 @@ C<https> scheme, or by passing the a true value as the C<SSL> parameter.
 
 =cut
 
-sub new
-{
-   my $class = shift;
-   my %args = @_;
-
-   my $loop = delete $args{loop};
-
-   my $self = $class->SUPER::new( %args );
-
-   $loop->add( $self ) if $loop;
-
-   return $self;
-}
-
 sub _init
 {
    my $self = shift;
@@ -113,6 +100,11 @@ be constructed that declares C<Net::Async::HTTP> and the version number.
 Optional. How many levels of redirection to follow. If not supplied, will
 default to 3. Give 0 to disable redirection entirely.
 
+=item timeout => NUM
+
+Optional. How long in seconds to wait before giving up on a request. If not
+supplied then no default will be applied, and no timeout will take place.
+
 =item proxy_host => STRING
 
 =item proxy_port => INT
@@ -133,7 +125,7 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( user_agent max_redirects proxy_host proxy_port cookie_jar )) {
+   foreach (qw( user_agent max_redirects timeout proxy_host proxy_port cookie_jar )) {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
@@ -169,6 +161,7 @@ sub get_connection
    }
 
    my $conn = Net::Async::HTTP::Protocol->new(
+      notifier_name => $key,
       on_closed => sub {
          delete $connections->{$key};
       },
@@ -225,9 +218,12 @@ A reference to an C<HTTP::Request> object
 
 =item host => STRING
 
-=item port => INT
+Hostname of the server to connect to
 
-Hostname and port number of the server to connect to
+=item port => INT or STRING
+
+Optional. Port number or service of the server to connect to. If not defined,
+will default to C<http> or C<https> depending on whether SSL is being used.
 
 =item SSL => BOOL
 
@@ -333,6 +329,13 @@ URL.
 Optional. How many levels of redirection to follow. If not supplied, will
 default to the value given in the constructor.
 
+=item timeout => NUM
+
+Optional. Specifies a timeout in seconds, after which to give up on the
+request and fail it with an error. If this happens, the error message will be
+C<Timed out>. Any other pipelined requests using the same connection will also
+fail with the same error.
+
 =back
 
 =cut
@@ -349,18 +352,45 @@ sub do_request
    my $request_body = $args{request_body};
 
    my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
+   my $timeout       = defined $args{timeout}       ? $args{timeout}       : $self->{timeout};
 
    my $host;
    my $port;
    my $ssl;
 
-   my $request;
+   my $timer = $args{timer};
+   if( !$timer and defined $timeout ) {
+      $timer = Net::Async::HTTP::Timer->new( delay => $timeout );
+      $self->add_child( $timer );
+      $timer->start;
+
+      my $inner_on_response = $on_response;
+      $on_response = sub {
+         $timer->stop;
+         $self->remove_child( $timer );
+         goto $inner_on_response;
+      };
+
+      my $inner_on_error = $on_error;
+      $on_error = sub {
+         $timer->stop;
+         $self->remove_child( $timer );
+         goto $inner_on_error;
+      };
+
+      $args{timer} = $timer;
+   }
 
    my $on_header_redir = sub {
+      return if $timer and $timer->expired;
+
+      $timer->set_on_expire( sub {
+         $on_error->( "Timed out" );
+      } ) if $timer;
+
       my ( $response ) = @_;
 
       if( !$response->is_redirect or $max_redirects == 0 ) {
-         $response->request( $request );
          $self->process_response( $response );
 
          return $on_header->( $response ) if $on_header;
@@ -401,10 +431,12 @@ sub do_request
             %args,
             uri => $loc_uri,
             max_redirects => $max_redirects - 1,
+            previous_response => $response,
          );
       }
    };
 
+   my $request;
    if( $args{request} ) {
       $request = delete $args{request};
       ref $request and $request->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
@@ -458,56 +490,41 @@ sub do_request
 
    $self->prepare_request( $request );
 
-   if( my $handle = $args{handle} ) { # INTERNAL UNDOCUMENTED
-      my $transport = IO::Async::Stream->new( handle => $handle );
-
-      $self->get_connection(
-         transport => $transport,
-
-         # To make the connection cache logic happy
-         host => "[[local_io_handle]]",
-         port => $handle->fileno,
-
-         on_error => $on_error,
-
-         on_ready => sub {
-            my ( $conn ) = @_;
-            $conn->request(
-               request => $request,
-               request_body => $request_body,
-               on_header => $on_header_redir,
-               on_error  => $on_error,
-            );
-         },
-      );
+   if( !defined $host ) {
+      $host = delete $args{host} or croak "Expected 'host'";
    }
-   else {
-      if( !defined $host ) {
-         $host = delete $args{host} or croak "Expected 'host'";
-      }
 
-      if( !defined $port ) {
-         $port = delete $args{port} or croak "Expected 'port'";
-      }
-
-      $self->get_connection(
-         host => $args{proxy_host} || $self->{proxy_host} || $host,
-         port => $args{proxy_port} || $self->{proxy_port} || $port,
-         SSL  => $ssl,
-
-         on_error => $on_error,
-
-         on_ready => sub {
-            my ( $conn ) = @_;
-            $conn->request(
-               request => $request,
-               request_body => $request_body,
-               on_header => $on_header_redir,
-               on_error  => $on_error,
-            );
-         },
-      );
+   if( !defined $port ) {
+      $port = delete $args{port} || ( $ssl ? "https" : "http" );
    }
+
+   $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
+
+   $self->get_connection(
+      host => $args{proxy_host} || $self->{proxy_host} || $host,
+      port => $args{proxy_port} || $self->{proxy_port} || $port,
+      SSL  => $ssl,
+
+      on_error => $on_error,
+
+      on_ready => sub {
+         my ( $conn ) = @_;
+         return if $timer and $timer->expired;
+
+         $conn->request(
+            request => $request,
+            request_body => $request_body,
+            previous_response => $args{previous_response},
+            on_header => $on_header_redir,
+            on_error  => $on_error,
+         );
+
+         $timer->set_on_expire( sub {
+            $conn->error_all( "Timed out" );
+            $conn->close;
+         } ) if $timer;
+      },
+   );
 }
 
 =head1 SUBCLASS METHODS

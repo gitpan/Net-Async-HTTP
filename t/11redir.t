@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 10;
+use Test::More tests => 12;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -20,113 +20,159 @@ my $http = Net::Async::HTTP->new(
 
 $loop->add( $http );
 
-my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
+{
+   my $redir_response;
+   my $location;
 
-my $redir_response;
-my $location;
+   my $response;
 
-my $response;
+   my $peersock;
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
 
-$http->do_request(
-   uri => URI->new( "http://my.server/doc" ),
-   handle => $S1,
+      $args{host}    eq "host0" or die "Expected $args{host} eq host0";
+      $args{service} eq "80"    or die "Expected $args{service} eq 80";
 
-   on_response => sub { $response = $_[0] },
-   on_redirect => sub { ( $redir_response, $location ) = @_ },
-   on_error    => sub { die "Test died early - $_[0]" },
-);
+      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
 
-my $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
 
-$request_stream =~ s/^(.*)$CRLF//;
-my $req_firstline = $1;
+   $http->do_request(
+      uri => URI->new( "http://host0/doc" ),
 
-is( $req_firstline, "GET /doc HTTP/1.1", 'First line for request' );
+      timeout => 10,
 
-# Trim headers
-$request_stream =~ s/^(.*)$CRLF$CRLF//s;
+      on_response => sub { $response = $_[0] },
+      on_redirect => sub { ( $redir_response, $location ) = @_ },
+      on_error    => sub { die "Test died early - $_[0]" },
+   );
 
-$S2->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
-               "Content-Length: 0$CRLF" .
-               "Location: http://my.server/get_doc?name=doc$CRLF" .
-               "$CRLF" );
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
-wait_for { defined $location };
+   $request_stream =~ s/^(.*)$CRLF//;
+   my $req_firstline = $1;
 
-is( $location, "http://my.server/get_doc?name=doc", 'Redirect happens' );
+   is( $req_firstline, "GET /doc HTTP/1.1", 'First line for request' );
 
-$request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+   # Trim headers
+   $request_stream =~ s/^(.*)$CRLF$CRLF//s;
 
-$request_stream =~ s/^(.*)$CRLF//;
-$req_firstline = $1;
+   $peersock->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
+                        "Content-Length: 0$CRLF" .
+                        "Location: http://host0/get_doc?name=doc$CRLF" .
+                        "$CRLF" );
 
-is( $req_firstline, "GET /get_doc?name=doc HTTP/1.1", 'First line for redirected request' );
+   wait_for { defined $location };
 
-# Trim headers
-$request_stream =~ s/^(.*)$CRLF$CRLF//s;
+   is( $location, "http://host0/get_doc?name=doc", 'Redirect happens' );
 
-$S2->syswrite( "HTTP/1.1 200 OK$CRLF" .
-               "Content-Length: 8$CRLF".
-               "Content-Type: text/plain$CRLF" .
-               "$CRLF" .
-               "Document" );
+   $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
-wait_for { defined $response };
+   $request_stream =~ s/^(.*)$CRLF//;
+   $req_firstline = $1;
 
-is( $response->content_type, "text/plain", 'Content type of final response' );
-is( $response->content, "Document", 'Content of final response' );
+   is( $req_firstline, "GET /get_doc?name=doc HTTP/1.1", 'First line for redirected request' );
 
-$http->do_request(
-   uri => URI->new( "http://my.server/somedir" ),
-   handle => $S1,
+   # Trim headers
+   $request_stream =~ s/^(.*)$CRLF$CRLF//s;
 
-   on_response => sub { $response = $_[0] },
-   on_redirect => sub { ( $redir_response, $location ) = @_ },
-   on_error    => sub { die "Test died early - $_[0]" },
-);
+   $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                        "Content-Length: 8$CRLF".
+                        "Content-Type: text/plain$CRLF" .
+                        "$CRLF" .
+                        "Document" );
 
-$request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+   wait_for { defined $response };
 
-$request_stream =~ s/^(.*)$CRLF//;
-$req_firstline = $1;
+   is( $response->content_type, "text/plain", 'Content type of final response' );
+   is( $response->content, "Document", 'Content of final response' );
 
-is( $req_firstline, "GET /somedir HTTP/1.1", 'First line for request for local redirect' );
+   isa_ok( $response->previous, "HTTP::Response", '$response->previous' );
 
-# Trim headers
-$request_stream =~ s/^(.*)$CRLF$CRLF//s;
+   my $previous = $response->previous;
+   is( $previous->request->uri, "/doc", 'Previous request URI' );
+}
 
-$S2->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
-               "Content-Length: 0$CRLF" .
-               "Location: /somedir/$CRLF" .
-               "$CRLF" );
+{
+   my $redir_response;
+   my $location;
 
-undef $location;
-wait_for { defined $location };
+   my $response;
 
-is( $location, "http://my.server/somedir/", 'Local redirect happens' );
+   my $peersock;
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
 
-$request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+      $args{host}    eq "host1" or die "Expected $args{host} eq host1";
+      $args{service} eq "80"    or die "Expected $args{service} eq 80";
 
-$request_stream =~ s/^(.*)$CRLF//;
-$req_firstline = $1;
+      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
 
-is( $req_firstline, "GET /somedir/ HTTP/1.1", 'First line for locally redirected request' );
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
 
-# Trim headers
-$request_stream =~ s/^(.*)$CRLF$CRLF//s;
+   $http->do_request(
+      uri => URI->new( "http://host1/somedir" ),
 
-$S2->syswrite( "HTTP/1.1 200 OK$CRLF" .
-               "Content-Length: 9$CRLF".
-               "Content-Type: text/plain$CRLF" .
-               "$CRLF" .
-               "Directory" );
+      timeout => 10,
 
-undef $response;
-wait_for { defined $response };
+      on_response => sub { $response = $_[0] },
+      on_redirect => sub { ( $redir_response, $location ) = @_ },
+      on_error    => sub { die "Test died early - $_[0]" },
+   );
 
-is( $response->content_type, "text/plain", 'Content type of final response to local redirect' );
-is( $response->content, "Directory", 'Content of final response to local redirect' );
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $request_stream =~ s/^(.*)$CRLF//;
+   my $req_firstline = $1;
+
+   is( $req_firstline, "GET /somedir HTTP/1.1", 'First line for request for local redirect' );
+
+   # Trim headers
+   $request_stream =~ s/^(.*)$CRLF$CRLF//s;
+
+   $peersock->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
+                        "Content-Length: 0$CRLF" .
+                        "Location: /somedir/$CRLF" .
+                        "$CRLF" );
+
+   undef $location;
+   wait_for { defined $location };
+
+   is( $location, "http://host1/somedir/", 'Local redirect happens' );
+
+   $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $request_stream =~ s/^(.*)$CRLF//;
+   $req_firstline = $1;
+
+   is( $req_firstline, "GET /somedir/ HTTP/1.1", 'First line for locally redirected request' );
+
+   # Trim headers
+   $request_stream =~ s/^(.*)$CRLF$CRLF//s;
+
+   $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                        "Content-Length: 9$CRLF".
+                        "Content-Type: text/plain$CRLF" .
+                        "$CRLF" .
+                        "Directory" );
+
+   undef $response;
+   wait_for { defined $response };
+
+   is( $response->content_type, "text/plain", 'Content type of final response to local redirect' );
+   is( $response->content, "Directory", 'Content of final response to local redirect' );
+}

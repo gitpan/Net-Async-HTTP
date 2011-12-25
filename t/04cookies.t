@@ -25,12 +25,27 @@ my $http = Net::Async::HTTP->new(
 
 $loop->add( $http );
 
+my $peersock;
+
 sub do_test_req
 {
    my $name = shift;
    my %args = @_;
 
-   my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      $args{host}    eq "myhost" or die "Expected $args{host} eq myhost";
+      $args{service} eq "http"   or die "Expected $args{service} eq http";
+
+      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
 
    my $response;
    my $error;
@@ -39,7 +54,7 @@ sub do_test_req
 
    $http->do_request(
       request => $request,
-      handle  => $S1,
+      host    => "myhost",
 
       on_response => sub { $response = $_[0] },
       on_error    => sub { $error    = $_[0] },
@@ -47,7 +62,7 @@ sub do_test_req
 
    # Wait for the client to send its request
    my $request_stream = "";
-   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
    # Ignore first line
    $request_stream =~ s/^(.*)$CRLF//;
@@ -65,7 +80,7 @@ sub do_test_req
 
    is_deeply( \%req_headers, $args{expect_req_headers}, "Request headers for $name" );
 
-   $S2->syswrite( $args{response} );
+   $peersock->syswrite( $args{response} );
 
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };

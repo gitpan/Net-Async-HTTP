@@ -20,7 +20,19 @@ my $http = Net::Async::HTTP->new(
 
 $loop->add( $http );
 
-my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
+my $peersock;
+
+no warnings 'redefine';
+local *Net::Async::HTTP::Protocol::connect = sub {
+   my $self = shift;
+   my %args = @_;
+
+   ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+   $self->IO::Async::Protocol::connect(
+      transport => IO::Async::Stream->new( handle => $selfsock )
+   );
+};
 
 my $header;
 my $body;
@@ -28,7 +40,6 @@ my $body_is_done;
 
 $http->do_request(
    uri => URI->new( "http://my.server/here" ),
-   handle => $S1,
 
    on_header => sub {
       ( $header ) = @_;
@@ -42,12 +53,12 @@ $http->do_request(
 
 # Wait for request but don't really care what it actually is
 my $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
-$S2->syswrite( "HTTP/1.1 200 OK$CRLF" .
-               "Content-Length: 15$CRLF" .
-               "Content-Type: text/plain$CRLF" .
-               "$CRLF" );
+$peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                     "Content-Length: 15$CRLF" .
+                     "Content-Type: text/plain$CRLF" .
+                     "$CRLF" );
 
 wait_for { defined $header };
 
@@ -55,13 +66,13 @@ isa_ok( $header, "HTTP::Response", '$header for Content-Length' );
 is( $header->content_length, 15, '$header->content_length' );
 is( $header->content_type, "text/plain", '$header->content_type' );
 
-$S2->syswrite( "Hello, " );
+$peersock->syswrite( "Hello, " );
 
 wait_for { length $body == 7 };
 
 is( $body, "Hello, ", '$body partial Content-Length' );
 
-$S2->syswrite( "world!$CRLF" );
+$peersock->syswrite( "world!$CRLF" );
 
 wait_for { $body_is_done };
 is( $body, "Hello, world!$CRLF", '$body' );
@@ -72,7 +83,6 @@ undef $body_is_done;
 
 $http->do_request(
    uri => URI->new( "http://my.server/here" ),
-   handle => $S1,
 
    on_header => sub {
       ( $header ) = @_;
@@ -86,13 +96,13 @@ $http->do_request(
 
 # Wait for request but don't really care what it actually is
 $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
-$S2->syswrite( "HTTP/1.1 200 OK$CRLF" .
-               "Content-Length: 15$CRLF" .
-               "Content-Type: text/plain$CRLF" .
-               "Transfer-Encoding: chunked$CRLF" .
-               "$CRLF" );
+$peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                     "Content-Length: 15$CRLF" .
+                     "Content-Type: text/plain$CRLF" .
+                     "Transfer-Encoding: chunked$CRLF" .
+                     "$CRLF" );
 
 wait_for { defined $header };
 
@@ -100,17 +110,17 @@ isa_ok( $header, "HTTP::Response", '$header for chunked' );
 is( $header->content_length, 15, '$header->content_length' );
 is( $header->content_type, "text/plain", '$header->content_type' );
 
-$S2->syswrite( "7$CRLF" . "Hello, " . $CRLF );
+$peersock->syswrite( "7$CRLF" . "Hello, " . $CRLF );
 
 wait_for { length $body == 7 };
 is( $body, "Hello, ", '$body partial chunked' );
 
-$S2->syswrite( "8$CRLF" . "world!$CRLF" . $CRLF );
+$peersock->syswrite( "8$CRLF" . "world!$CRLF" . $CRLF );
 
 wait_for { length $body == 15 };
 is( $body, "Hello, world!$CRLF", '$body partial(2) chunked' );
 
-$S2->syswrite( "0$CRLF" . $CRLF );
+$peersock->syswrite( "0$CRLF" . $CRLF );
 
 wait_for { $body_is_done };
 is( $body, "Hello, world!$CRLF", '$body chunked' );
@@ -121,7 +131,6 @@ undef $body_is_done;
 
 $http->do_request(
    uri => URI->new( "http://my.server/here" ),
-   handle => $S1,
 
    on_header => sub {
       ( $header ) = @_;
@@ -135,29 +144,29 @@ $http->do_request(
 
 # Wait for request but don't really care what it actually is
 $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
-$S2->syswrite( "HTTP/1.0 200 OK$CRLF" .
-               "Content-Type: text/plain$CRLF" .
-               "$CRLF" );
+$peersock->syswrite( "HTTP/1.0 200 OK$CRLF" .
+                     "Content-Type: text/plain$CRLF" .
+                     "$CRLF" );
 
 wait_for { defined $header };
 
 isa_ok( $header, "HTTP::Response", '$header for EOF' );
 is( $header->content_type, "text/plain", '$header->content_type' );
 
-$S2->syswrite( "Hello, " );
+$peersock->syswrite( "Hello, " );
 
 wait_for { length $body == 7 };
 
 is( $body, "Hello, ", '$body partial EOF' );
 
-$S2->syswrite( "world!$CRLF" );
+$peersock->syswrite( "world!$CRLF" );
 
 wait_for { length $body == 15 };
 
 is( $body, "Hello, world!$CRLF", '$body' );
 
-$S2->close;
+$peersock->close;
 
 wait_for { $body_is_done };

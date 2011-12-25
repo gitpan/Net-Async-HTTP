@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 
@@ -17,6 +17,10 @@ use base qw( IO::Async::Protocol::Stream );
 use HTTP::Response;
 
 my $CRLF = "\x0d\x0a"; # More portable than \r\n
+
+# Indices into responder_queue elements
+use constant ON_READ  => 0;
+use constant ON_ERROR => 1;
 
 =head1 NAME
 
@@ -63,14 +67,34 @@ sub on_read
    my $self = shift;
    my ( $buffref, $closed ) = @_;
 
-   if( my $on_read = shift @{ $self->{on_read_queue} } ) {
-      return $on_read;
+   if( my $head = $self->{responder_queue}[0] ) {
+      my $ret = $head->[ON_READ]->( $self, $buffref, $closed );
+
+      if( defined $ret ) {
+         return $ret if !ref $ret;
+
+         $head->[ON_READ] = $ret;
+         return 1;
+      }
+
+      shift @{ $self->{responder_queue} };
+      return 1 if !$closed and length $$buffref;
+      return;
    }
 
    # Reinvoked after switch back to baseline, but may be idle again
    return if $closed or !length $$buffref;
 
    croak "Spurious on_read of connection while idle\n";
+}
+
+sub error_all
+{
+   my $self = shift;
+
+   while( my $head = shift @{ $self->{responder_queue} } ) {
+      $head->[ON_ERROR]->( @_ );
+   }
 }
 
 sub request
@@ -96,11 +120,18 @@ sub request
       my ( $self, $buffref, $closed ) = @_;
 
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {
-         $on_error->( "Connection closed while awaiting header" ) if $closed;
+         if( $closed ) {
+            $self->debug_printf( "ERROR closed" );
+            $on_error->( "Connection closed while awaiting header" );
+         }
          return 0;
       }
 
       my $header = HTTP::Response->parse( $1 );
+      $header->request( $req );
+      $header->previous( $args{previous_response} ) if $args{previous_response};
+
+      $self->debug_printf( "HEADER %s", $header->status_line );
 
       my $on_body_chunk = $on_header->( $header );
 
@@ -109,6 +140,7 @@ sub request
       # RFC 2616 says "HEAD" does not have a body, nor do any 1xx codes, nor
       # 204 (No Content) nor 304 (Not Modified)
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
+         $self->debug_printf( "BODY done" );
          $on_body_chunk->();
          return undef; # Finished
       }
@@ -133,7 +165,10 @@ sub request
                return sub {
                   my ( $self, $buffref, $closed ) = @_;
 
-                  $on_error->( "Connection closed while awaiting chunk trailer" ) if $closed;
+                  if( $closed ) {
+                     $self->debug_printf( "ERROR closed" );
+                     $on_error->( "Connection closed while awaiting chunk trailer" );
+                  }
 
                   $$buffref =~ s/^(.*)$CRLF// or return 0;
                   $trailer .= $1;
@@ -142,6 +177,7 @@ sub request
 
                   # TODO: Actually use the trailer
 
+                  $self->debug_printf( "BODY done" );
                   $on_body_chunk->();
                   return undef; # Finished
                }
@@ -154,6 +190,7 @@ sub request
                undef $chunk_length;
 
                unless( $$buffref =~ s/^$CRLF// ) {
+                  $self->debug_printf( "ERROR chunk without CRLF" );
                   $on_error->( "Chunk of size $chunk_length wasn't followed by CRLF" );
                   $self->close;
                }
@@ -163,12 +200,16 @@ sub request
                return 1;
             }
 
-            $on_error->( "Connection closed while awaiting chunk" ) if $closed;
+            if( $closed ) {
+               $self->debug_printf( "ERROR closed" );
+               $on_error->( "Connection closed while awaiting chunk" );
+            }
             return 0;
          };
       }
       elsif( defined $content_length ) {
          if( $content_length == 0 ) {
+            $self->debug_printf( "BODY done" );
             $on_body_chunk->();
             return undef; # Finished
          }
@@ -184,11 +225,15 @@ sub request
             $content_length -= length $content;
 
             if( $content_length == 0 ) {
+               $self->debug_printf( "BODY done" );
                $on_body_chunk->();
                return undef;
             }
 
-            $on_error->( "Connection closed while awaiting body" ) if $closed;
+            if( $closed ) {
+               $self->debug_printf( "ERROR closed" );
+               $on_error->( "Connection closed while awaiting body" );
+            }
             return 0;
          };
       }
@@ -201,6 +246,7 @@ sub request
 
             return 0 unless $closed;
 
+            $self->debug_printf( "BODY done" );
             $on_body_chunk->();
             # $self already closed
             return undef;
@@ -232,7 +278,7 @@ sub request
 
    $self->write( $request_body ) if $request_body;
 
-   push @{ $self->{on_read_queue} }, $on_read;
+   push @{ $self->{responder_queue} }, [ $on_read, $on_error ];
 }
 
 =head1 AUTHOR

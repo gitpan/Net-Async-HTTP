@@ -5,6 +5,7 @@ examples/parallel-put.pl
 examples/PUT.pl
 lib/Net/Async/HTTP.pm
 lib/Net/Async/HTTP/Protocol.pm
+lib/Net/Async/HTTP/Timer.pm
 LICENSE
 Makefile.PL
 MANIFEST			This list of files
@@ -14,13 +15,14 @@ README
 t/00use.t
 t/01request.t
 t/02uri.t
-t/03legacyloop.t
-t/04prepareprocess.t
-t/05cookies.t
+t/03prepareprocess.t
+t/04cookies.t
+t/05conncache.t
 t/10pipeline.t
 t/11redir.t
 t/12request-streaming.t
 t/13response-streaming.t
+t/14timeout.t
 t/20local-connect.t
 t/21local-connect-ssl.t
 t/22local-connect-pipeline.t

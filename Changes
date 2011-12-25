@@ -1,5 +1,11 @@
 Revision history for Net-Async-HTTP
 
+0.14    CHANGES:
+         * Per-request timeouts
+         * Default port to http/https if not supplied explicitly
+         * Fill in Response ->previous on redirects - RT72791
+         * Improvements to unit tests
+
 0.13    BUGFIXES:
          * Handle redirect to https:// as well as http:// (RT71526)
          * Fix use of conditional variable declaration that breaks on

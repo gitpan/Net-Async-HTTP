@@ -8,9 +8,10 @@ use URI;
 use IO::Async::Loop;
 use Net::Async::HTTP;
 
-my $loop = IO::Async::Loop->new();
+my $loop = IO::Async::Loop->new;
 
-my $ua = Net::Async::HTTP->new( loop => $loop );
+my $ua = Net::Async::HTTP->new;
+$loop->add( $ua );
 
 $ua->do_request(
    method => "GET",
@@ -31,4 +32,4 @@ $ua->do_request(
    }
 );
 
-$loop->loop_forever();
+$loop->loop_forever;

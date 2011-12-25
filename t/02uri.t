@@ -22,15 +22,30 @@ $loop->add( $http );
 
 # Most of this function copypasted from t/01http-req.t
 
+my $hostnum = 0;
+
 sub do_test_uri
 {
    my $name = shift;
    my %args = @_;
 
-   my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
-
    my $response;
    my $error;
+
+   my $peersock;
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      $args{service} eq "80" or die "Expected $args{service} eq 80";
+
+      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
 
    $http->do_request(
       uri     => $args{uri},
@@ -39,15 +54,16 @@ sub do_test_uri
       pass    => $args{pass},
       content => $args{content},
       content_type => $args{content_type},
-      handle  => $S1,
 
       on_response => sub { $response = $_[0] },
       on_error    => sub { $error    = $_[0] },
    );
 
+   wait_for { $peersock };
+
    # Wait for the client to send its request
    my $request_stream = "";
-   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
    $request_stream =~ s/^(.*)$CRLF//;
    my $req_firstline = $1;
@@ -71,8 +87,8 @@ sub do_test_uri
       is( $req_content, $args{expect_req_content}, "Request content for $name" );
    }
 
-   $S2->syswrite( $args{response} );
-   $S2->close if $args{close_after_response};
+   $peersock->syswrite( $args{response} );
+   $peersock->close if $args{close_after_response};
 
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };
@@ -105,11 +121,11 @@ sub do_test_uri
 
 do_test_uri( "simple HEAD",
    method => "HEAD",
-   uri    => URI->new( "http://myhost/some/path" ),
+   uri    => URI->new( "http://host0/some/path" ),
 
    expect_req_firstline => "HEAD /some/path HTTP/1.1",
    expect_req_headers => {
-      Host => "myhost",
+      Host => "host0",
    },
 
    response => "HTTP/1.1 200 OK$CRLF" . 
@@ -127,11 +143,11 @@ do_test_uri( "simple HEAD",
 
 do_test_uri( "simple GET",
    method => "GET",
-   uri    => URI->new( "http://myhost/some/path" ),
+   uri    => URI->new( "http://host1/some/path" ),
 
    expect_req_firstline => "GET /some/path HTTP/1.1",
    expect_req_headers => {
-      Host => "myhost",
+      Host => "host1",
    },
 
    response => "HTTP/1.1 200 OK$CRLF" . 
@@ -150,11 +166,11 @@ do_test_uri( "simple GET",
 
 do_test_uri( "GET with params",
    method => "GET",
-   uri    => URI->new( "http://myhost/cgi?param=value" ),
+   uri    => URI->new( "http://host2/cgi?param=value" ),
 
    expect_req_firstline => "GET /cgi?param=value HTTP/1.1",
    expect_req_headers => {
-      Host => "myhost",
+      Host => "host2",
    },
 
    response => "HTTP/1.1 200 OK$CRLF" . 
@@ -173,13 +189,13 @@ do_test_uri( "GET with params",
 
 do_test_uri( "authenticated GET",
    method => "GET",
-   uri    => URI->new( "http://myhost/secret" ),
+   uri    => URI->new( "http://host3/secret" ),
    user   => "user",
    pass   => "pass",
 
    expect_req_firstline => "GET /secret HTTP/1.1",
    expect_req_headers => {
-      Host => "myhost",
+      Host => "host3",
       Authorization => "Basic dXNlcjpwYXNz", # determined using 'wget'
    },
 
@@ -199,11 +215,11 @@ do_test_uri( "authenticated GET",
 
 do_test_uri( "authenticated GET (URL embedded)",
    method => "GET",
-   uri    => URI->new( "http://user:pass\@myhost/private" ),
+   uri    => URI->new( "http://user:pass\@host4/private" ),
 
    expect_req_firstline => "GET /private HTTP/1.1",
    expect_req_headers => {
-      Host => "myhost",
+      Host => "host4",
       Authorization => "Basic dXNlcjpwYXNz", # determined using 'wget'
    },
 
@@ -223,13 +239,13 @@ do_test_uri( "authenticated GET (URL embedded)",
 
 do_test_uri( "simple POST",
    method  => "POST",
-   uri     => URI->new( "http://somewhere/handler" ),
+   uri     => URI->new( "http://host5/handler" ),
    content => "New content",
    content_type => "text/plain",
 
    expect_req_firstline => "POST /handler HTTP/1.1",
    expect_req_headers => {
-      Host => "somewhere",
+      Host => "host5",
       'Content-Length' => 11,
       'Content-Type' => "text/plain",
    },
@@ -251,12 +267,12 @@ do_test_uri( "simple POST",
 
 do_test_uri( "form POST",
    method  => "POST",
-   uri     => URI->new( "http://somewhere/handler" ),
+   uri     => URI->new( "http://host6/handler" ),
    content => [ param => "value", another => "value with things" ],
 
    expect_req_firstline => "POST /handler HTTP/1.1",
    expect_req_headers => {
-      Host => "somewhere",
+      Host => "host6",
       'Content-Length' => 37,
       'Content-Type' => "application/x-www-form-urlencoded",
    },
@@ -275,4 +291,3 @@ do_test_uri( "form POST",
    },
    expect_res_content => "Done",
 );
-

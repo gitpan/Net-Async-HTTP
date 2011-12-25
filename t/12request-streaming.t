@@ -20,7 +20,19 @@ my $http = Net::Async::HTTP->new(
 
 $loop->add( $http );
 
-my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
+my $peersock;
+
+no warnings 'redefine';
+local *Net::Async::HTTP::Protocol::connect = sub {
+   my $self = shift;
+   my %args = @_;
+
+   ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+   $self->IO::Async::Protocol::connect(
+      transport => IO::Async::Stream->new( handle => $selfsock )
+   );
+};
 
 my $req = HTTP::Request->new( PUT => "/handler", [ Host => "somewhere" ]);
 $req->protocol( "HTTP/1.1" );
@@ -31,7 +43,7 @@ my $response;
 my $done = 0;
 $http->do_request(
    request => $req,
-   handle => $S1,
+   host    => "myhost",
 
    request_body => sub {
       if( !$done ) {
@@ -56,7 +68,7 @@ $http->do_request(
 
 # Wait for the client to send its request
 my $request_stream = "";
-wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
 $request_stream =~ s/^(.*)$CRLF//;
 my $req_firstline = $1;
@@ -76,7 +88,7 @@ is_deeply( \%req_headers,
 
 my $req_content;
 if( defined( my $len = $req_headers{'Content-Length'} ) ) {
-   wait_for_stream { length( $request_stream ) >= $len } $S2 => $request_stream;
+   wait_for_stream { length( $request_stream ) >= $len } $peersock => $request_stream;
 
    $req_content = substr( $request_stream, 0, $len );
    substr( $request_stream, 0, $len ) = "";
@@ -84,9 +96,9 @@ if( defined( my $len = $req_headers{'Content-Length'} ) ) {
 
 is( $req_content, "Content from callback", 'Request content for streaming PUT' );
 
-$S2->syswrite( "HTTP/1.1 201 Created$CRLF" . 
-               "Content-Length: 0$CRLF" .
-               $CRLF );
+$peersock->syswrite( "HTTP/1.1 201 Created$CRLF" . 
+                     "Content-Length: 0$CRLF" .
+                     $CRLF );
 
 wait_for { defined $response };
 

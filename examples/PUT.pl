@@ -45,12 +45,13 @@ GetOptions(
    'help|h' => sub { usage(0) },
 ) or usage(1);
 
-my $loop = IO::Async::Loop->new();
+my $loop = IO::Async::Loop->new;
 
 $url = shift @ARGV or usage(1);
 $src = shift @ARGV or usage(1) if !defined $src;
 
-my $ua = Net::Async::HTTP->new( loop => $loop );
+my $ua = Net::Async::HTTP->new;
+$loop->add( $ua );
 
 # We'll send the size as the Content-Length, and get the filehandle ready for reading
 my $size = (stat $src)[7];
@@ -125,4 +126,4 @@ $ua->do_request(
    }
 );
 
-$loop->loop_forever();
+$loop->loop_forever;

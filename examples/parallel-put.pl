@@ -44,14 +44,16 @@ The -n option specifies how many parallel connections to open (default is a sing
 
 USAGE
 
-my $loop = IO::Async::Loop->new();
+my $loop = IO::Async::Loop->new;
 
 # Bytes transferred so far
 my $total = 0;
 
 # Define some workers
 $opts{n} ||= 1;
-my @ua = map { Net::Async::HTTP->new( loop => $loop ) } 1..$opts{n};
+my @ua = map { Net::Async::HTTP->new } 1..$opts{n};
+$loop->add( $_ ) for @ua;
+
 my $start = time;
 
 # Used for pretty-printing, not essential if you don't have it installed
@@ -87,7 +89,7 @@ $loop->add($timer);
 $timer->start;
 
 # And begin looping
-$loop->loop_forever();
+$loop->loop_forever;
 exit;
 
 # Get next item from the queue and make the request

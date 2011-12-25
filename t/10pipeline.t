@@ -20,12 +20,26 @@ $loop->add( $http );
 
 # Most of this function copypasted from t/01http-req.t
 
+my $peersock;
+
 sub do_uris
 {
-   my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
-
    my %wait;
    my $wait_id = 0;
+
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      $args{service} eq "80" or die "Expected $args{service} eq 80";
+
+      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
 
    while( my ( $uri, $on_resp ) = splice @_, 0, 2 ) {
       $wait{$wait_id} = 1;
@@ -35,10 +49,11 @@ sub do_uris
       $http->do_request(
          uri     => $uri,
          method  => 'GET',
-         handle  => $S1,
+
+         timeout => 10,
 
          on_response => sub { $on_resp->( @_ ); delete $wait{$id} },
-         on_error    => sub { die "Test failed early - $!" },
+         on_error    => sub { die "Test failed early - $_[-1]" },
       );
 
       $wait_id++;
@@ -48,7 +63,7 @@ sub do_uris
 
    while( keys %wait ) {
       # Wait for the client to send its request
-      wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $S2 => $request_stream;
+      wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
       $request_stream =~ s/^(.*)$CRLF//;
       my $req_firstline = $1;
@@ -68,10 +83,10 @@ sub do_uris
 
       my $body = "$req_firstline";
 
-      $S2->syswrite( "HTTP/1.1 200 OK$CRLF" . 
-                     "Content-Length: " . length( $body ) . $CRLF .
-                     $CRLF .
-                     $body );
+      $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" . 
+                           "Content-Length: " . length( $body ) . $CRLF .
+                           $CRLF .
+                           $body );
 
       # Wait for the server to finish its response
       wait_for { keys %wait < $waitcount };
