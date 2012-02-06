@@ -141,12 +141,14 @@ do_test_req( "simple HEAD",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF,
 
    expect_res_code    => 200,
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "",
 );
@@ -166,6 +168,7 @@ do_test_req( "simple GET",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "Hello, world!",
 
@@ -173,6 +176,7 @@ do_test_req( "simple GET",
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "Hello, world!",
 );
@@ -192,6 +196,7 @@ do_test_req( "GET to full URL",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "Hello, world!",
 
@@ -199,6 +204,7 @@ do_test_req( "GET to full URL",
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "Hello, world!",
 );
@@ -218,12 +224,14 @@ do_test_req( "GET with empty body",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 0$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF,
 
    expect_res_code    => 200,
    expect_res_headers => {
       'Content-Length' => 0,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "",
 );
@@ -243,12 +251,14 @@ do_test_req( "GET not found",
    response => "HTTP/1.1 404 Not Found$CRLF" . 
                "Content-Length: 0$CRLF" .
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF,
 
    expect_res_code    => 404,
    expect_res_headers => {
       'Content-Length' => 0,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "",
 );
@@ -268,6 +278,7 @@ do_test_req( "GET chunks",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" .
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                "Transfer-Encoding: chunked$CRLF" .
                $CRLF .
                "7$CRLF" . "Hello, " . $CRLF .
@@ -279,6 +290,7 @@ do_test_req( "GET chunks",
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
       'Transfer-Encoding' => "chunked",
    },
    expect_res_content => "Hello, world!",
@@ -298,6 +310,7 @@ do_test_req( "GET unspecified length",
 
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: close$CRLF" .
                $CRLF .
                "Some more content here",
    close_after_response => 1,
@@ -305,6 +318,7 @@ do_test_req( "GET unspecified length",
    expect_res_code    => 200,
    expect_res_headers => {
       'Content-Type'   => "text/plain",
+      'Connection'     => "close",
    },
    expect_res_content => "Some more content here",
 );
@@ -326,6 +340,7 @@ do_test_req( "simple POST",
    response => "HTTP/1.1 201 Created$CRLF" . 
                "Content-Length: 11$CRLF" .
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF .
                "New content",
 
@@ -333,6 +348,7 @@ do_test_req( "simple POST",
    expect_res_headers => {
       'Content-Length' => 11,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "New content",
 );
@@ -353,10 +369,12 @@ do_test_req( "simple PUT",
 
    response => "HTTP/1.1 201 Created$CRLF" . 
                "Content-Length: 0$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF,
 
    expect_res_code    => 201,
    expect_res_headers => {
       'Content-Length' => 0,
+      'Connection'     => "Keep-Alive",
    },
 );

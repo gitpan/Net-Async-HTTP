@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 use Carp;
 
@@ -136,19 +136,23 @@ sub request
       my $on_body_chunk = $on_header->( $header );
 
       my $code = $header->code;
+      my $connection_close = lc( $header->header( "Connection" ) || "close" ) eq "close";
 
       # RFC 2616 says "HEAD" does not have a body, nor do any 1xx codes, nor
       # 204 (No Content) nor 304 (Not Modified)
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
          $self->debug_printf( "BODY done" );
+         $self->close if $connection_close;
          $on_body_chunk->();
          return undef; # Finished
       }
 
       my $transfer_encoding = $header->header( "Transfer-Encoding" );
-      my $content_length = $header->content_length;
+      my $content_length    = $header->content_length;
 
       if( defined $transfer_encoding and $transfer_encoding eq "chunked" ) {
+         $self->debug_printf( "BODY chunks" );
+
          my $chunk_length;
 
          return sub {
@@ -208,6 +212,8 @@ sub request
          };
       }
       elsif( defined $content_length ) {
+         $self->debug_printf( "BODY length $content_length" );
+
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
             $on_body_chunk->();
@@ -226,6 +232,7 @@ sub request
 
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
+               $self->close if $connection_close;
                $on_body_chunk->();
                return undef;
             }
@@ -238,6 +245,8 @@ sub request
          };
       }
       else {
+         $self->debug_printf( "BODY until EOF" );
+
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
@@ -245,6 +254,11 @@ sub request
             $$buffref = "";
 
             return 0 unless $closed;
+
+            # TODO: IO::Async probably ought to do this. We need to fire the
+            # on_closed event _before_ calling on_body_chunk, to clear the
+            # connection cache in case another request comes - e.g. HEAD->GET
+            $self->close;
 
             $self->debug_printf( "BODY done" );
             $on_body_chunk->();

@@ -58,6 +58,7 @@ wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_strea
 $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
                      "Content-Length: 15$CRLF" .
                      "Content-Type: text/plain$CRLF" .
+                     "Connection: Keep-Alive$CRLF" .
                      "$CRLF" );
 
 wait_for { defined $header };
@@ -101,6 +102,7 @@ wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_strea
 $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
                      "Content-Length: 15$CRLF" .
                      "Content-Type: text/plain$CRLF" .
+                     "Connection: Keep-Alive$CRLF" .
                      "Transfer-Encoding: chunked$CRLF" .
                      "$CRLF" );
 
@@ -148,6 +150,7 @@ wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_strea
 
 $peersock->syswrite( "HTTP/1.0 200 OK$CRLF" .
                      "Content-Type: text/plain$CRLF" .
+                     "Connection: close$CRLF" .
                      "$CRLF" );
 
 wait_for { defined $header };

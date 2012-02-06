@@ -88,7 +88,6 @@ sub do_test_uri
    }
 
    $peersock->syswrite( $args{response} );
-   $peersock->close if $args{close_after_response};
 
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };
@@ -131,12 +130,14 @@ do_test_uri( "simple HEAD",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF,
 
    expect_res_code    => 200,
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "",
 );
@@ -153,6 +154,7 @@ do_test_uri( "simple GET",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 13$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "Hello, world!",
 
@@ -160,6 +162,7 @@ do_test_uri( "simple GET",
    expect_res_headers => {
       'Content-Length' => 13,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "Hello, world!",
 );
@@ -176,6 +179,7 @@ do_test_uri( "GET with params",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 11$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "CGI content",
 
@@ -183,6 +187,7 @@ do_test_uri( "GET with params",
    expect_res_headers => {
       'Content-Length' => 11,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "CGI content",
 );
@@ -202,6 +207,7 @@ do_test_uri( "authenticated GET",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 18$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "For your eyes only",
 
@@ -209,6 +215,7 @@ do_test_uri( "authenticated GET",
    expect_res_headers => {
       'Content-Length' => 18,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "For your eyes only",
 );
@@ -226,6 +233,7 @@ do_test_uri( "authenticated GET (URL embedded)",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 6$CRLF" . 
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF . 
                "Shhhh!",
 
@@ -233,6 +241,7 @@ do_test_uri( "authenticated GET (URL embedded)",
    expect_res_headers => {
       'Content-Length' => 6,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "Shhhh!",
 );
@@ -254,6 +263,7 @@ do_test_uri( "simple POST",
    response => "HTTP/1.1 201 Created$CRLF" . 
                "Content-Length: 11$CRLF" .
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF .
                "New content",
 
@@ -261,6 +271,7 @@ do_test_uri( "simple POST",
    expect_res_headers => {
       'Content-Length' => 11,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "New content",
 );
@@ -281,6 +292,7 @@ do_test_uri( "form POST",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 4$CRLF" .
                "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
                $CRLF .
                "Done",
 
@@ -288,6 +300,7 @@ do_test_uri( "form POST",
    expect_res_headers => {
       'Content-Length' => 4,
       'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
    },
    expect_res_content => "Done",
 );

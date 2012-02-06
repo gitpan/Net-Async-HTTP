@@ -50,6 +50,7 @@ $loop->SSL_listen(
 
             $self->write( "HTTP/1.1 200 OK$CRLF" .
                           "Content-Type: text/plain$CRLF" .
+                          "Connection: close$CRLF" .
                           "$CRLF" .
                           "OK" );
 

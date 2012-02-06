@@ -44,10 +44,12 @@ $loop->listen(
                ? "HTTP/1.1 301 Moved Permanently$CRLF" .
                  "Content-Length: 0$CRLF" .
                  "Location: http://127.0.0.1:$port/moved$CRLF" .
+                 "Connection: close$CRLF" .
                  "$CRLF"
                : "HTTP/1.1 200 OK$CRLF" .
                  "Content-Type: text/plain$CRLF" .
                  "Content-Length: 2$CRLF" .
+                 "Connection: close$CRLF" .
                  "$CRLF" .
                  "OK";
 

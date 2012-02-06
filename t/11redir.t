@@ -66,6 +66,7 @@ $loop->add( $http );
    $peersock->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
                         "Content-Length: 0$CRLF" .
                         "Location: http://host0/get_doc?name=doc$CRLF" .
+                        "Connection: Keep-Alive$CRLF" .
                         "$CRLF" );
 
    wait_for { defined $location };
@@ -86,6 +87,7 @@ $loop->add( $http );
    $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
                         "Content-Length: 8$CRLF".
                         "Content-Type: text/plain$CRLF" .
+                        "Connection: Keep-Alive$CRLF" .
                         "$CRLF" .
                         "Document" );
 

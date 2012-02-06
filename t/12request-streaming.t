@@ -80,7 +80,7 @@ my %req_headers = map { m/^(.*?):\s+(.*)$/g } split( m/$CRLF/, $1 );
 
 is_deeply( \%req_headers,
    {
-      Host => "somewhere",
+      'Host'           => "somewhere",
       'Content-Length' => 21,
    },
    'Request headers for streaming PUT'
@@ -98,6 +98,7 @@ is( $req_content, "Content from callback", 'Request content for streaming PUT' )
 
 $peersock->syswrite( "HTTP/1.1 201 Created$CRLF" . 
                      "Content-Length: 0$CRLF" .
+                     "Connection: Keep-Alive$CRLF" .
                      $CRLF );
 
 wait_for { defined $response };
@@ -108,6 +109,7 @@ my %res_headers = map { $_ => $response->header( $_ ) } $response->header_field_
 is_deeply( \%res_headers,
    {
       'Content-Length' => 0,
+      'Connection'     => "Keep-Alive",
    },
    'Result headers for streaming PUT'
 );

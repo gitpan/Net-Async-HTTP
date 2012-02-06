@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.15    BUGFIXES:
+         * Better HTTP handling of "Connection: close" connections; close the
+           socket at the end of the response body or HEAD header.
+
 0.14    CHANGES:
          * Per-request timeouts
          * Default port to http/https if not supplied explicitly

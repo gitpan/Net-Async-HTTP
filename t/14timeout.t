@@ -72,6 +72,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    $peersock->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
                         "Content-Length: 0$CRLF" .
                         "Location: http://my.server/get_doc?name=doc$CRLF" .
+                        "Connection: Keep-Alive$CRLF" .
                         "$CRLF" );
 
    wait_for { defined $error };

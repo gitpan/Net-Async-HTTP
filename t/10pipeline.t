@@ -85,6 +85,7 @@ sub do_uris
 
       $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" . 
                            "Content-Length: " . length( $body ) . $CRLF .
+                           "Connection: Keep-Alive$CRLF" .
                            $CRLF .
                            $body );
 
