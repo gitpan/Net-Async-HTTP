@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 66;
+use Test::More tests => 80;
 use Test::Identity;
 use IO::Async::Test;
 use IO::Async::Loop;
@@ -296,6 +296,36 @@ do_test_req( "GET chunks",
    expect_res_content => "Hello, world!",
 );
 
+do_test_req( "GET chunks LWS stripping",
+   req => $req,
+   host => "somewhere",
+
+   expect_req_firstline => "GET /stream HTTP/1.1",
+   expect_req_headers => {
+      Host => "somewhere",
+   },
+
+   response => "HTTP/1.1 200 OK$CRLF" . 
+               "Content-Length: 13$CRLF" .
+               "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
+               "Transfer-Encoding:   chunked  $CRLF" .
+               $CRLF .
+               "7$CRLF" . "Hello, " . $CRLF .
+               "6$CRLF" . "world!" . $CRLF .
+               "0$CRLF" .
+               "$CRLF",
+
+   expect_res_code    => 200,
+   expect_res_headers => {
+      'Content-Length' => 13,
+      'Content-Type'   => "text/plain",
+      'Connection'     => "Keep-Alive",
+      'Transfer-Encoding' => "chunked",
+   },
+   expect_res_content => "Hello, world!",
+);
+
 $req = HTTP::Request->new( GET => "/untileof", [ Host => "somewhere" ] );
 $req->protocol( "HTTP/1.1" );
 
@@ -311,6 +341,30 @@ do_test_req( "GET unspecified length",
    response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Type: text/plain$CRLF" .
                "Connection: close$CRLF" .
+               $CRLF .
+               "Some more content here",
+   close_after_response => 1,
+
+   expect_res_code    => 200,
+   expect_res_headers => {
+      'Content-Type'   => "text/plain",
+      'Connection'     => "close",
+   },
+   expect_res_content => "Some more content here",
+);
+
+do_test_req( "GET unspecified length LWS stripping",
+   req => $req,
+   host => "somewhere",
+
+   expect_req_firstline => "GET /untileof HTTP/1.1",
+   expect_req_headers => {
+      Host => "somewhere",
+   },
+
+   response => "HTTP/1.1 200 OK$CRLF" . 
+               "Content-Type: text/plain$CRLF" .
+               "Connection:   close  $CRLF" .
                $CRLF .
                "Some more content here",
    close_after_response => 1,

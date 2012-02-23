@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2012 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP::Protocol;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use Carp;
 
@@ -21,6 +21,11 @@ my $CRLF = "\x0d\x0a"; # More portable than \r\n
 # Indices into responder_queue elements
 use constant ON_READ  => 0;
 use constant ON_ERROR => 1;
+
+# Detect whether HTTP::Message properly trims whitespace in header values. If
+# it doesn't, we have to deploy a workaround to fix them up.
+#   https://rt.cpan.org/Ticket/Display.html?id=75224
+use constant HTTP_MESSAGE_TRIMS_LWS => HTTP::Message->parse( "Name:   value  " )->header("Name") eq "value";
 
 =head1 NAME
 
@@ -128,6 +133,17 @@ sub request
       }
 
       my $header = HTTP::Response->parse( $1 );
+
+      unless( HTTP_MESSAGE_TRIMS_LWS ) {
+         my @headers;
+         $header->scan( sub {
+            my ( $name, $value ) = @_;
+            s/^\s+//, s/\s+$// for $value;
+            push @headers, $name => $value;
+         } );
+         $header->header( @headers );
+      }
+
       $header->request( $req );
       $header->previous( $args{previous_response} ) if $args{previous_response};
 

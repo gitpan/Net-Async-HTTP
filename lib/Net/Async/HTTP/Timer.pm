@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Timer::Countdown );
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 # TODO: Make these (or something like them) methods on a real
 # IO::Async::Timer::Countdown
