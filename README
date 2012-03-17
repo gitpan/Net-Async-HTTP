@@ -69,6 +69,18 @@ PARAMETERS
             Optional. A reference to a HTTP::Cookies object. Will be used to
             set cookies in requests and store them from responses.
 
+    pipeline => BOOL
+            Optional. If false, disables HTTP/1.1-style request pipelining.
+
+    local_host => STRING
+    local_port => INT
+    local_addrs => ARRAY
+    local_addr => HASH or ARRAY
+            Optional. Parameters to pass on to the `connect' method used to
+            connect sockets to HTTP servers. Sets the local socket address
+            to `bind()' to. For more detail, see the documentation in
+            IO::Async::Connector.
+
 METHODS
   $http->do_request( %args )
     Send an HTTP request to a server, and set up the callbacks to receive a

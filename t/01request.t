@@ -43,8 +43,8 @@ sub do_test_req
       my $self = shift;
       my %args = @_;
 
-      $args{host}    eq $host  or die "Expected $args{host} eq $host";
-      $args{service} eq "http" or die "Expected $args{service} eq http";
+      $args{host}    eq $host or die "Expected $args{host} eq $host";
+      $args{service} eq "80"  or die "Expected $args{service} eq 80";
 
       ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
 
@@ -128,7 +128,6 @@ sub do_test_req
 my $req;
 
 $req = HTTP::Request->new( HEAD => "/some/path", [ Host => "myhost" ] );
-$req->protocol( "HTTP/1.1");
 
 do_test_req( "simple HEAD",
    req => $req,
@@ -154,7 +153,6 @@ do_test_req( "simple HEAD",
 );
 
 $req = HTTP::Request->new( GET => "/some/path", [ Host => "myhost" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "simple GET",
    req => $req,
@@ -182,7 +180,6 @@ do_test_req( "simple GET",
 );
 
 $req = HTTP::Request->new( GET => "http://myhost/some/path" );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "GET to full URL",
    req => $req,
@@ -210,7 +207,6 @@ do_test_req( "GET to full URL",
 );
 
 $req = HTTP::Request->new( GET => "/empty", [ Host => "myhost" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "GET with empty body",
    req => $req,
@@ -237,7 +233,6 @@ do_test_req( "GET with empty body",
 );
 
 $req = HTTP::Request->new( GET => "/somethingmissing", [ Host => "somewhere" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "GET not found",
    req => $req,
@@ -264,7 +259,6 @@ do_test_req( "GET not found",
 );
 
 $req = HTTP::Request->new( GET => "/stream", [ Host => "somewhere" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "GET chunks",
    req => $req,
@@ -327,7 +321,6 @@ do_test_req( "GET chunks LWS stripping",
 );
 
 $req = HTTP::Request->new( GET => "/untileof", [ Host => "somewhere" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "GET unspecified length",
    req => $req,
@@ -378,7 +371,6 @@ do_test_req( "GET unspecified length LWS stripping",
 );
 
 $req = HTTP::Request->new( POST => "/handler", [ Host => "somewhere" ], "New content" );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "simple POST",
    req => $req,
@@ -408,7 +400,6 @@ do_test_req( "simple POST",
 );
 
 $req = HTTP::Request->new( PUT => "/handler", [ Host => "somewhere" ], "New content" );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "simple PUT",
    req => $req,

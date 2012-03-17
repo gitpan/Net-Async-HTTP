@@ -38,7 +38,7 @@ sub do_test_req
       my %args = @_;
 
       $args{host}    eq "myhost" or die "Expected $args{host} eq myhost";
-      $args{service} eq "http"   or die "Expected $args{service} eq http";
+      $args{service} eq "80"     or die "Expected $args{service} eq 80";
 
       ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
 
@@ -93,7 +93,6 @@ sub do_test_req
 my $req;
 
 $req = HTTP::Request->new( GET => "http://myhost/", [ Host => "myhost" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "set cookie",
    req => $req,
@@ -114,7 +113,6 @@ do_test_req( "set cookie",
 );
 
 $req = HTTP::Request->new( POST => "http://myhost/", [ Host => "myhost" ] );
-$req->protocol( "HTTP/1.1" );
 
 do_test_req( "get cookie",
    req => $req,

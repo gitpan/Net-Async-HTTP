@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 use Carp;
 
@@ -18,8 +18,10 @@ use HTTP::Response;
 
 my $CRLF = "\x0d\x0a"; # More portable than \r\n
 
-# Indices into responder_queue elements
+# Indices into responder/ready queue elements
+# Honestly, these would be much neater with Futures...
 use constant ON_READ  => 0;
+use constant ON_READY => 0;
 use constant ON_ERROR => 1;
 
 # Detect whether HTTP::Message properly trims whitespace in header values. If
@@ -38,32 +40,81 @@ internally by L<Net::Async::HTTP>. It is not intended for general use.
 
 =cut
 
+sub _init
+{
+   my $self = shift;
+
+   $self->{outstanding_requests} = 0;
+}
+
+sub configure
+{
+   my $self = shift;
+   my %params = @_;
+
+   foreach (qw( pipeline )) {
+      $self->{$_} = delete $params{$_} if exists $params{$_};
+   }
+
+   $self->SUPER::configure( %params );
+}
+
+sub should_pipeline
+{
+   my $self = shift;
+   return $self->{pipeline} && $self->{can_pipeline};
+}
+
 sub connect
 {
    my $self = shift;
    $self->SUPER::connect(
       @_,
 
-      on_connected => sub {
-         my $self = shift;
-
-         if( my $queue = delete $self->{on_ready_queue} ) {
-            $_->( $self ) for @$queue;
-         }
-      },
+      on_connected => $self->can('ready'),
    );
+}
+
+sub ready
+{
+   my $self = shift;
+
+   my $queue = $self->{on_ready_queue} or return;
+
+   if( $self->should_pipeline ) {
+      $self->debug_printf( "READY pipelined" );
+      $self->{on_ready_queue} = [];
+      $_->[ON_READY]->( $self ) for @$queue;
+   }
+   elsif( @$queue ) {
+      $self->debug_printf( "READY non-pipelined" );
+      ( shift @$queue )->[ON_READY]->( $self );
+   }
+}
+
+sub is_idle
+{
+   my $self = shift;
+   return $self->{outstanding_requests} == 0;
+}
+
+sub _request_done
+{
+   my $self = shift;
+   $self->{outstanding_requests}--;
+   $self->ready;
 }
 
 sub run_when_ready
 {
    my $self = shift;
-   my ( $on_ready ) = @_;
+   my ( $on_ready, $on_error ) = @_;
 
-   if( $self->transport ) {
+   if( $self->transport and ( $self->should_pipeline or $self->is_idle ) ) {
       $on_ready->( $self );
    }
    else {
-      push @{ $self->{on_ready_queue} }, $on_ready;
+      push @{ $self->{on_ready_queue} }, [ $on_ready, $on_error ];
    }
 }
 
@@ -98,6 +149,10 @@ sub error_all
    my $self = shift;
 
    while( my $head = shift @{ $self->{responder_queue} } ) {
+      $head->[ON_ERROR]->( @_ );
+   }
+
+   while( my $head = shift @{ $self->{on_ready_queue} } ) {
       $head->[ON_ERROR]->( @_ );
    }
 }
@@ -144,6 +199,11 @@ sub request
          $header->header( @headers );
       }
 
+      my $protocol = $header->protocol;
+      if( $protocol =~ m{^HTTP/1\.(\d+)$} and $1 >= 1 ) {
+         $self->{can_pipeline} = 1;
+      }
+
       $header->request( $req );
       $header->previous( $args{previous_response} ) if $args{previous_response};
 
@@ -160,6 +220,7 @@ sub request
          $self->debug_printf( "BODY done" );
          $self->close if $connection_close;
          $on_body_chunk->();
+         $self->_request_done;
          return undef; # Finished
       }
 
@@ -199,6 +260,7 @@ sub request
 
                   $self->debug_printf( "BODY done" );
                   $on_body_chunk->();
+                  $self->_request_done;
                   return undef; # Finished
                }
             }
@@ -250,6 +312,7 @@ sub request
                $self->debug_printf( "BODY done" );
                $self->close if $connection_close;
                $on_body_chunk->();
+               $self->_request_done;
                return undef;
             }
 
@@ -279,6 +342,7 @@ sub request
             $self->debug_printf( "BODY done" );
             $on_body_chunk->();
             # $self already closed
+            $self->_request_done;
             return undef;
          };
       }
@@ -299,7 +363,8 @@ sub request
       $headers->init_header( Host => $uri->authority );
    }
 
-   my @headers = ( "$method $path " . $req->protocol );
+   my $protocol = $req->protocol || "HTTP/1.1";
+   my @headers = ( "$method $path $protocol" );
    $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
 
    $self->write( join( $CRLF, @headers ) .
@@ -307,6 +372,8 @@ sub request
                  $req->content );
 
    $self->write( $request_body ) if $request_body;
+
+   $self->{outstanding_requests}++;
 
    push @{ $self->{responder_queue} }, [ $on_read, $on_error ];
 }

@@ -3,7 +3,8 @@
 use strict;
 use warnings;
 
-use Test::More tests => 8;
+use Test::More tests => 11;
+use Test::Refcount;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -45,10 +46,14 @@ local *Net::Async::HTTP::Protocol::connect = sub {
       on_error    => sub { $errcount++; $error = $_[0] },
    );
 
+   is_refcount( $http, 2, '$http refcount 2 after ->do_request with timeout' );
+
    wait_for { defined $error };
 
    like( $error, qr/^Timed out/, 'Received timeout error' );
    is( $errcount, 1, 'on_error invoked once' );
+
+   is_refcount( $http, 2, '$http refcount 2 after ->do_request with timeout fails' );
 }
 
 {
@@ -106,10 +111,15 @@ local *Net::Async::HTTP::Protocol::connect = sub {
       on_error    => sub { $errcount2++; $error2 = $_[0] },
    );
 
-   wait_for { defined $error and defined $error2 };
-
+   wait_for { defined $error };
    like( $error, qr/^Timed out/, 'Received timeout error from pipeline' );
    is( $errcount, 1, 'on_error invoked once from pipeline' );
+
+   wait_for { defined $error2 };
    like( $error2, qr/^Timed out/, 'Received timeout error from pipeline(2)' );
    is( $errcount2, 1, 'on_error invoked once from pipeline(2)' );
 }
+
+$loop->remove( $http );
+
+is_oneref( $http, '$http has refcount 1 before EOF' );

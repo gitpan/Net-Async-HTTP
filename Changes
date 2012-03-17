@@ -1,5 +1,17 @@
 Revision history for Net-Async-HTTP
 
+0.17    CHANGES:
+         * Support optionally setting local host/port/addr (RT75431)
+         * Don't pipeline requests until the server is known to be at least
+           HTTP/1.1
+
+        BUGFIXES:
+         * Default request protocol to HTTP/1.1 so caller doesn't have to
+           (RT75830)
+         * http(s) port logic on numbers rather than protocol names (RT75615)
+         * Use more weaseling in timeout handlers to avoid cyclic reference
+           memory leak
+
 0.16    BUGFIXES:
          * Work around HTTP::Message's non-trimming of linear whitespace
            (RT72843)

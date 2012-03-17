@@ -35,7 +35,6 @@ local *Net::Async::HTTP::Protocol::connect = sub {
 };
 
 my $req = HTTP::Request->new( PUT => "/handler", [ Host => "somewhere" ]);
-$req->protocol( "HTTP/1.1" );
 $req->content_length( 21 ); # set this manually based on what we plan to send
 
 my $response;

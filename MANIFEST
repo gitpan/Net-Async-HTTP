@@ -28,6 +28,8 @@ t/21local-connect-ssl.t
 t/22local-connect-pipeline.t
 t/23local-connect-redir.t
 t/24local-connect-redir-ssl.t
+t/90rt75615.t
+t/90rt75616.t
 t/99pod.t
 t/privkey.pem
 t/server.pem

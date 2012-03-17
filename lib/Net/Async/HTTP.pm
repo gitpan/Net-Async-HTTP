@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2012 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -26,6 +26,9 @@ use IO::Async::Stream;
 use IO::Async::Loop 0.31; # for ->connect( extensions )
 
 use Socket qw( SOCK_STREAM );
+
+use constant HTTP_PORT  => 80;
+use constant HTTPS_PORT => 443;
 
 =head1 NAME
 
@@ -116,6 +119,22 @@ Optional. Default values to apply to each C<request> method.
 Optional. A reference to a L<HTTP::Cookies> object. Will be used to set
 cookies in requests and store them from responses.
 
+=item pipeline => BOOL
+
+Optional. If false, disables HTTP/1.1-style request pipelining.
+
+=item local_host => STRING
+
+=item local_port => INT
+
+=item local_addrs => ARRAY
+
+=item local_addr => HASH or ARRAY
+
+Optional. Parameters to pass on to the C<connect> method used to connect
+sockets to HTTP servers. Sets the local socket address to C<bind()> to. For
+more detail, see the documentation in L<IO::Async::Connector>.
+
 =back
 
 =cut
@@ -125,14 +144,16 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( user_agent max_redirects timeout proxy_host proxy_port cookie_jar )) {
+   foreach (qw( user_agent max_redirects timeout proxy_host proxy_port cookie_jar pipeline
+                local_host local_port local_addrs local_addr )) {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
    $self->SUPER::configure( %params );
 
-   defined $self->{user_agent}    or $self->{user_agent} = $DEFAULT_UA;
+   defined $self->{user_agent}    or $self->{user_agent}    = $DEFAULT_UA;
    defined $self->{max_redirects} or $self->{max_redirects} = $DEFAULT_MAXREDIR;
+   defined $self->{pipeline}      or $self->{pipeline}      = 1;
 }
 
 =head1 METHODS
@@ -156,12 +177,13 @@ sub get_connection
    my $key = "$host:$port";
 
    if( my $conn = $connections->{$key} ) {
-      $conn->run_when_ready( $on_ready );
+      $conn->run_when_ready( $on_ready, $on_error );
       return;
    }
 
    my $conn = Net::Async::HTTP::Protocol->new(
       notifier_name => $key,
+      pipeline => $self->{pipeline},
       on_closed => sub {
          delete $connections->{$key};
       },
@@ -193,13 +215,15 @@ sub get_connection
 
       on_connect_error => sub {
          delete $connections->{$key};
-         $on_error->( "$host:$port not contactable" );
+         $on_error->( "$host:$port not contactable [$_[-1]]" );
       },
 
       %args,
+
+      ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
    );
 
-   $conn->run_when_ready( $on_ready );
+   $conn->run_when_ready( $on_ready, $on_error );
 }
 
 =head2 $http->do_request( %args )
@@ -365,23 +389,24 @@ sub do_request
       $timer->start;
 
       my $inner_on_response = $on_response;
-      $on_response = sub {
+      $on_response = $self->_capture_weakself( sub {
+         my $self = shift;
          $timer->stop;
          $self->remove_child( $timer );
          goto $inner_on_response;
-      };
+      } );
 
       my $inner_on_error = $on_error;
-      $on_error = sub {
+      $on_error = $self->_capture_weakself( sub {
+         my $self = shift;
          $timer->stop;
          $self->remove_child( $timer );
          goto $inner_on_error;
-      };
-
-      $args{timer} = $timer;
+      } );
    }
 
-   my $on_header_redir = sub {
+   my $on_header_redir = $self->_capture_weakself( sub {
+      my $self = shift;
       return if $timer and $timer->expired;
 
       $timer->set_on_expire( sub {
@@ -411,7 +436,7 @@ sub do_request
             # skip
          }
          elsif( $location =~ m{^/} ) {
-            my $hostport = ( $port != URI::http->default_port ) ? "$host:$port" : $host;
+            my $hostport = ( $port != HTTP_PORT ) ? "$host:$port" : $host;
             $location = "http://$hostport" . $location;
          }
          else {
@@ -434,7 +459,7 @@ sub do_request
             previous_response => $response,
          );
       }
-   };
+   } );
 
    my $request;
    if( $args{request} ) {
@@ -495,7 +520,7 @@ sub do_request
    }
 
    if( !defined $port ) {
-      $port = delete $args{port} || ( $ssl ? "https" : "http" );
+      $port = delete $args{port} || ( $ssl ? HTTPS_PORT : HTTP_PORT );
    }
 
    $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
