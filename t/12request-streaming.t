@@ -81,6 +81,7 @@ is_deeply( \%req_headers,
    {
       'Host'           => "somewhere",
       'Content-Length' => 21,
+      'Connection'     => 'keep-alive',
    },
    'Request headers for streaming PUT'
 );

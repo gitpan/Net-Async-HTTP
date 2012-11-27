@@ -23,6 +23,8 @@ t/11redir.t
 t/12request-streaming.t
 t/13response-streaming.t
 t/14timeout.t
+t/15max-in-flight.t
+t/16close.t
 t/20local-connect.t
 t/21local-connect-ssl.t
 t/22local-connect-pipeline.t

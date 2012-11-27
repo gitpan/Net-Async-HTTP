@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 4;
+use Test::More tests => 7;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -78,7 +78,11 @@ sub do_test_req
       substr( $request_stream, 0, $len ) = "";
    }
 
-   is_deeply( \%req_headers, $args{expect_req_headers}, "Request headers for $name" );
+   my $expect_req_headers = $args{expect_req_headers};
+
+   foreach my $header ( keys %$expect_req_headers ) {
+      is( $req_headers{$header}, $expect_req_headers->{$header}, "Expected value for $header" );
+   }
 
    $peersock->syswrite( $args{response} );
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 44;
+use Test::More tests => 50;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -81,7 +81,11 @@ sub do_test_uri
       substr( $request_stream, 0, $len ) = "";
    }
 
-   is_deeply( \%req_headers, $args{expect_req_headers}, "Request headers for $name" );
+   my $expect_req_headers = $args{expect_req_headers};
+
+   foreach my $header ( keys %$expect_req_headers ) {
+      is( $req_headers{$header}, $expect_req_headers->{$header}, "Expected value for $header" );
+   }
 
    if( defined $args{expect_req_content} ) {
       is( $req_content, $args{expect_req_content}, "Request content for $name" );

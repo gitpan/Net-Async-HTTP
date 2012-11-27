@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.17';
+our $VERSION = '0.18';
 
 use Carp;
 
@@ -44,7 +44,7 @@ sub _init
 {
    my $self = shift;
 
-   $self->{outstanding_requests} = 0;
+   $self->{requests_in_flight} = 0;
 }
 
 sub configure
@@ -52,24 +52,67 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( pipeline )) {
+   foreach (qw( pipeline max_in_flight )) {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
+   if( my $on_closed = $params{on_closed} ) {
+      $params{on_closed} = sub {
+         my $self = shift;
+
+         $self->debug_printf( "CLOSED" );
+         $self->error_on_ready( "Connection closed" );
+
+         $on_closed->( $self );
+      };
+   }
+
+   croak "max_in_flight parameter required, may be zero" unless defined $self->{max_in_flight};
+
    $self->SUPER::configure( %params );
+}
+
+# TODO: IO::Async::Protocol::Stream ought to do this
+sub setup_transport
+{
+   my $self = shift;
+   my ( $transport ) = @_;
+   $self->SUPER::setup_transport( $transport );
+
+   $transport->configure(
+      on_write_eof => $self->_replace_weakself( "on_write_eof" ),
+   );
+}
+
+sub teardown_transport
+{
+   my $self = shift;
+   my ( $transport ) = @_;
+
+   $transport->configure(
+      on_write_eof => undef,
+   );
+
+   $self->SUPER::teardown_transport( $transport );
 }
 
 sub should_pipeline
 {
    my $self = shift;
-   return $self->{pipeline} && $self->{can_pipeline};
+   return $self->{pipeline} &&
+          $self->{can_pipeline} &&
+          ( !$self->{max_in_flight} || $self->{requests_in_flight} < $self->{max_in_flight} );
 }
 
 sub connect
 {
    my $self = shift;
+   my %args = @_;
+
+   $self->debug_printf( "CONNECT $args{host}:$args{service}" );
+
    $self->SUPER::connect(
-      @_,
+      %args,
 
       on_connected => $self->can('ready'),
    );
@@ -83,25 +126,29 @@ sub ready
 
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
-      $self->{on_ready_queue} = [];
-      $_->[ON_READY]->( $self ) for @$queue;
+      ( shift @$queue )->[ON_READY]->( $self ) while @$queue && $self->should_pipeline;
    }
-   elsif( @$queue ) {
+   elsif( @$queue and $self->is_idle ) {
       $self->debug_printf( "READY non-pipelined" );
       ( shift @$queue )->[ON_READY]->( $self );
+   }
+   else {
+      $self->debug_printf( "READY cannot-run queue=%d idle=%s",
+         scalar @$queue, $self->is_idle ? "Y" : "N");
    }
 }
 
 sub is_idle
 {
    my $self = shift;
-   return $self->{outstanding_requests} == 0;
+   return $self->{requests_in_flight} == 0;
 }
 
 sub _request_done
 {
    my $self = shift;
-   $self->{outstanding_requests}--;
+   $self->{requests_in_flight}--;
+   $self->debug_printf( "DONE remaining in-flight=$self->{requests_in_flight}" );
    $self->ready;
 }
 
@@ -110,11 +157,11 @@ sub run_when_ready
    my $self = shift;
    my ( $on_ready, $on_error ) = @_;
 
-   if( $self->transport and ( $self->should_pipeline or $self->is_idle ) ) {
-      $on_ready->( $self );
-   }
-   else {
-      push @{ $self->{on_ready_queue} }, [ $on_ready, $on_error ];
+   push @{ $self->{on_ready_queue} }, [ $on_ready, $on_error ];
+
+   if( $self->transport ) {
+      # ready might be better renamed to ``try_ready'' or something.
+      $self->ready;
    }
 }
 
@@ -144,6 +191,21 @@ sub on_read
    croak "Spurious on_read of connection while idle\n";
 }
 
+sub on_write_eof
+{
+   my $self = shift;
+   $self->error_all( "Connection closed" );
+}
+
+sub error_on_ready
+{
+   my $self = shift;
+
+   while( my $head = shift @{ $self->{on_ready_queue} } ) {
+      $head->[ON_ERROR]->( @_ );
+   }
+}
+
 sub error_all
 {
    my $self = shift;
@@ -152,9 +214,7 @@ sub error_all
       $head->[ON_ERROR]->( @_ );
    }
 
-   while( my $head = shift @{ $self->{on_ready_queue} } ) {
-      $head->[ON_ERROR]->( @_ );
-   }
+   $self->error_on_ready( @_ );
 }
 
 sub request
@@ -164,9 +224,11 @@ sub request
 
    my $on_header = $args{on_header} or croak "Expected 'on_header' as a CODE ref";
    my $on_error  = $args{on_error}  or croak "Expected 'on_error' as a CODE ref";
-   
+
    my $req = $args{request};
    ref $req and $req->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
+
+   $self->debug_printf( "REQUEST %s", $req->uri );
 
    my $request_body = $args{request_body};
 
@@ -212,7 +274,18 @@ sub request
       my $on_body_chunk = $on_header->( $header );
 
       my $code = $header->code;
-      my $connection_close = lc( $header->header( "Connection" ) || "close" ) eq "close";
+
+      # can_pipeline is set for HTTP/1.1 or above; presume it can keep-alive if set
+      my $connection_close = lc( $header->header( "Connection" ) || ( $self->{can_pipeline} ? "keep-alive" : "close" ) )
+                              eq "close";
+
+      if( $connection_close ) {
+         $self->{max_in_flight} = 1;
+      }
+      elsif( defined( my $keep_alive = lc( $header->header("Keep-Alive") || "" ) ) ) {
+         my ( $max ) = ( $keep_alive =~ m/max=(\d+)/ );
+         $self->{max_in_flight} = $max if $max && $max < $self->{max_in_flight};
+      }
 
       # RFC 2616 says "HEAD" does not have a body, nor do any 1xx codes, nor
       # 204 (No Content) nor 304 (Not Modified)
@@ -235,7 +308,7 @@ sub request
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
-            if( !defined $chunk_length and $$buffref =~ s/^(.*?)$CRLF// ) {
+            if( !defined $chunk_length and $$buffref =~ s/^([A-Fa-f0-9]+).*?$CRLF// ) {
                # Chunk header
                $chunk_length = hex( $1 );
                return 1 if $chunk_length;
@@ -295,6 +368,7 @@ sub request
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
             $on_body_chunk->();
+            $self->_request_done;
             return undef; # Finished
          }
 
@@ -373,7 +447,7 @@ sub request
 
    $self->write( $request_body ) if $request_body;
 
-   $self->{outstanding_requests}++;
+   $self->{requests_in_flight}++;
 
    push @{ $self->{responder_queue} }, [ $on_read, $on_error ];
 }

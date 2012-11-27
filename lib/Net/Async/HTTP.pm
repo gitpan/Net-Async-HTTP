@@ -9,10 +9,11 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.17';
+our $VERSION = '0.18';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
+our $DEFAULT_MAX_IN_FLIGHT = 4;
 
 use Carp;
 
@@ -70,9 +71,8 @@ C<Net::Async::HTTP> - use HTTP with C<IO::Async>
 This object class implements an asynchronous HTTP user agent. It sends
 requests to servers, and invokes continuation callbacks when responses are
 received. The object supports multiple concurrent connections to servers, and
-allows multiple outstanding requests in pipeline to any one connection.
-Normally, only one such object will be needed per program to support any
-number of requests.
+allows multiple requests in the pipeline to any one connection. Normally, only
+one such object will be needed per program to support any number of requests.
 
 This module optionally supports SSL connections, if L<IO::Async::SSL> is
 installed. If so, SSL can be requested either by passing a URI with the
@@ -102,6 +102,14 @@ be constructed that declares C<Net::Async::HTTP> and the version number.
 
 Optional. How many levels of redirection to follow. If not supplied, will
 default to 3. Give 0 to disable redirection entirely.
+
+=item max_in_flight => INT
+
+Optional. The maximum number of in-flight requests to allow per host when
+pipelining is enabled and supported on that host. If more requests are made
+over this limit they will be queued internally by the object and not sent to
+the server until responses are received. If not supplied, will default to 4.
+Give 0 to disable the limit entirely.
 
 =item timeout => NUM
 
@@ -144,8 +152,10 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( user_agent max_redirects timeout proxy_host proxy_port cookie_jar pipeline
-                local_host local_port local_addrs local_addr )) {
+   foreach (qw( user_agent max_redirects max_in_flight
+      timeout proxy_host proxy_port cookie_jar pipeline local_host local_port
+      local_addrs local_addr ))
+   {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
@@ -153,6 +163,7 @@ sub configure
 
    defined $self->{user_agent}    or $self->{user_agent}    = $DEFAULT_UA;
    defined $self->{max_redirects} or $self->{max_redirects} = $DEFAULT_MAXREDIR;
+   defined $self->{max_in_flight} or $self->{max_in_flight} = $DEFAULT_MAX_IN_FLIGHT;
    defined $self->{pipeline}      or $self->{pipeline}      = 1;
 }
 
@@ -183,11 +194,16 @@ sub get_connection
 
    my $conn = Net::Async::HTTP::Protocol->new(
       notifier_name => $key,
+      max_in_flight => $self->{max_in_flight},
       pipeline => $self->{pipeline},
       on_closed => sub {
+         my $conn = shift;
+
+         $conn->remove_from_parent;
          delete $connections->{$key};
       },
    );
+
    $self->add_child( $conn );
 
    $connections->{$key} = $conn;
@@ -378,8 +394,8 @@ sub do_request
    my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
    my $timeout       = defined $args{timeout}       ? $args{timeout}       : $self->{timeout};
 
-   my $host;
-   my $port;
+   my $host = delete $args{host};
+   my $port = delete $args{port};
    my $ssl;
 
    my $timer = $args{timer};
@@ -451,6 +467,7 @@ sub do_request
          }
 
          $args{on_redirect}->( $response, $location ) if $args{on_redirect};
+         $args{timer} = $timer;
 
          $self->do_request(
             %args,
@@ -465,7 +482,15 @@ sub do_request
    if( $args{request} ) {
       $request = delete $args{request};
       ref $request and $request->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
+
       $ssl = $args{SSL};
+
+      my $uri = $request->uri;
+      if( defined $uri->scheme and $uri->scheme =~ m/^http(s?)$/ ) {
+         $host = $uri->host if !defined $host;
+         $port = $uri->port if !defined $port;
+         $ssl = ( $uri->scheme eq "https" );
+      }
    }
    elsif( $args{uri} ) {
       my $uri = delete $args{uri};
@@ -515,13 +540,8 @@ sub do_request
 
    $self->prepare_request( $request );
 
-   if( !defined $host ) {
-      $host = delete $args{host} or croak "Expected 'host'";
-   }
-
-   if( !defined $port ) {
-      $port = delete $args{port} || ( $ssl ? HTTPS_PORT : HTTP_PORT );
-   }
+   defined $host or croak "Expected 'host'";
+   defined $port or $port = ( $ssl ? HTTPS_PORT : HTTP_PORT );
 
    $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
 
@@ -571,6 +591,8 @@ sub prepare_request
    my ( $request ) = @_;
 
    $request->init_header( 'User-Agent' => $self->{user_agent} ) if length $self->{user_agent};
+   $request->init_header( "Connection" => "keep-alive" );
+
    $self->{cookie_jar}->add_cookie_header( $request ) if $self->{cookie_jar};
 }
 

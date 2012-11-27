@@ -35,7 +35,7 @@ DESCRIPTION
     This object class implements an asynchronous HTTP user agent. It sends
     requests to servers, and invokes continuation callbacks when responses
     are received. The object supports multiple concurrent connections to
-    servers, and allows multiple outstanding requests in pipeline to any one
+    servers, and allows multiple requests in the pipeline to any one
     connection. Normally, only one such object will be needed per program to
     support any number of requests.
 
@@ -55,6 +55,14 @@ PARAMETERS
             Optional. How many levels of redirection to follow. If not
             supplied, will default to 3. Give 0 to disable redirection
             entirely.
+
+    max_in_flight => INT
+            Optional. The maximum number of in-flight requests to allow per
+            host when pipelining is enabled and supported on that host. If
+            more requests are made over this limit they will be queued
+            internally by the object and not sent to the server until
+            responses are received. If not supplied, will default to 4. Give
+            0 to disable the limit entirely.
 
     timeout => NUM
             Optional. How long in seconds to wait before giving up on a

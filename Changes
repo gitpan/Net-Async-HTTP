@@ -1,5 +1,21 @@
 Revision history for Net-Async-HTTP
 
+0.18    CHANGES:
+         * Default host/port/SSLness from URL in HTTP::Request if given
+         * Set Connection: keep-alive by default
+         * Presume that HTTP/1.1 connections can keep-alive by default
+         * Attempt to limit the number of outstanding requests in flight per
+           connection; keep others in a queue
+
+        BUGFIXES:
+         * Pass the same timer object down redirects so the same overall
+           timeout is reused
+         * Fix memory leak by remembering to remove closed NaHTTP::Protocol
+           children from containing NaHTTP
+         * Correctly terminate requests to connections closed during write
+         * Handle trailing whitespace after Chunked encoding chunk size
+           (thanks David Leadbeater)
+
 0.17    CHANGES:
          * Support optionally setting local host/port/addr (RT75431)
          * Don't pipeline requests until the server is known to be at least
