@@ -18,6 +18,7 @@ t/02uri.t
 t/03prepareprocess.t
 t/04cookies.t
 t/05conncache.t
+t/06future.t
 t/10pipeline.t
 t/11redir.t
 t/12request-streaming.t

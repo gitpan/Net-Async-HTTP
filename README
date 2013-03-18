@@ -41,7 +41,7 @@ DESCRIPTION
 
     This module optionally supports SSL connections, if IO::Async::SSL is
     installed. If so, SSL can be requested either by passing a URI with the
-    `https' scheme, or by passing the a true value as the `SSL' parameter.
+    `https' scheme, or by passing a true value as the `SSL' parameter.
 
 PARAMETERS
     The following named parameters may be passed to `new' or `configure':
@@ -201,6 +201,16 @@ METHODS
             error message will be `Timed out'. Any other pipelined requests
             using the same connection will also fail with the same error.
 
+  $future = $http->do_request( %args )
+    This method also returns a Future, which will eventually yield the
+    (final non-redirect) `HTTP::Response'. If returning a future, then the
+    `on_response', `on_header' and `on_error' callbacks are optional.
+
+  $future = $http->GET( $uri, %args )
+  $future = $http->HEAD( $uri, %args )
+    Convenient wrappers for using the `GET' or `HEAD' methods with a `URI'
+    object and few if any other arguments, returning a `Future'.
+
 SUBCLASS METHODS
     The following methods are intended as points for subclasses to override,
     to add extra functionallity.
@@ -211,6 +221,34 @@ SUBCLASS METHODS
   $http->process_response( $response )
     Called after a non-redirect `HTTP::Response' has been received from a
     server. The originating request will be set in the object.
+
+EXAMPLES
+  Concurrent GET
+    The `Future'-returning `GET' method makes it easy to await multiple URLs
+    at once.
+
+     my @URLs = ( ... );
+
+     my $http = Net::Async::HTTP->new( ... );
+     $loop->add( $http );
+
+     my $future = Future->wait_all(
+        map {
+           my $url = $_;
+           $http->GET( $url )
+                ->on_done( sub {
+                   my $response = shift;
+                   say "$url succeeded: ", $response->code;
+                   say "  Content-Type":", $response->content_type;
+                } )
+                ->on_fail( sub {
+                   my $failure = shift;
+                   say "$url failed: $failure";
+                } );
+        } @URLs
+     );
+
+     $loop->await( $future );
 
 SEE ALSO
     *   http://tools.ietf.org/html/rfc2616 - Hypertext Transfer Protocol --

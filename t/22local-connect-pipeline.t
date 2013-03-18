@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 4;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -79,3 +79,5 @@ is( $responses[0]->content, "OK", '$response->content' );
 
 is( $responses[1]->content_type, "text/plain", '$response->content_type' );
 is( $responses[1]->content, "OK", '$response->content' );
+
+done_testing;

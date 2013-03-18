@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2013 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP::Protocol;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use Carp;
 
@@ -19,9 +19,7 @@ use HTTP::Response;
 my $CRLF = "\x0d\x0a"; # More portable than \r\n
 
 # Indices into responder/ready queue elements
-# Honestly, these would be much neater with Futures...
 use constant ON_READ  => 0;
-use constant ON_READY => 0;
 use constant ON_ERROR => 1;
 
 # Detect whether HTTP::Message properly trims whitespace in header values. If
@@ -82,6 +80,9 @@ sub setup_transport
    $transport->configure(
       on_write_eof => $self->_replace_weakself( "on_write_eof" ),
    );
+
+   $self->debug_printf( "CONNECTED" );
+   $self->ready;
 }
 
 sub teardown_transport
@@ -111,11 +112,7 @@ sub connect
 
    $self->debug_printf( "CONNECT $args{host}:$args{service}" );
 
-   $self->SUPER::connect(
-      %args,
-
-      on_connected => $self->can('ready'),
-   );
+   $self->SUPER::connect( %args );
 }
 
 sub ready
@@ -126,11 +123,11 @@ sub ready
 
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
-      ( shift @$queue )->[ON_READY]->( $self ) while @$queue && $self->should_pipeline;
+      ( shift @$queue )->done( $self ) while @$queue && $self->should_pipeline;
    }
    elsif( @$queue and $self->is_idle ) {
       $self->debug_printf( "READY non-pipelined" );
-      ( shift @$queue )->[ON_READY]->( $self );
+      ( shift @$queue )->done( $self );
    }
    else {
       $self->debug_printf( "READY cannot-run queue=%d idle=%s",
@@ -152,17 +149,18 @@ sub _request_done
    $self->ready;
 }
 
-sub run_when_ready
+sub new_ready_future
 {
    my $self = shift;
-   my ( $on_ready, $on_error ) = @_;
 
-   push @{ $self->{on_ready_queue} }, [ $on_ready, $on_error ];
+   push @{ $self->{on_ready_queue} }, my $f = $self->loop->new_future;
 
    if( $self->transport ) {
       # ready might be better renamed to ``try_ready'' or something.
       $self->ready;
    }
+
+   return $f;
 }
 
 sub on_read
@@ -202,7 +200,7 @@ sub error_on_ready
    my $self = shift;
 
    while( my $head = shift @{ $self->{on_ready_queue} } ) {
-      $head->[ON_ERROR]->( @_ );
+      $head->fail( @_ );
    }
 }
 
@@ -223,7 +221,6 @@ sub request
    my %args = @_;
 
    my $on_header = $args{on_header} or croak "Expected 'on_header' as a CODE ref";
-   my $on_error  = $args{on_error}  or croak "Expected 'on_error' as a CODE ref";
 
    my $req = $args{request};
    ref $req and $req->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
@@ -238,13 +235,15 @@ sub request
       $req->init_header( "Content-Length", length $req->content );
    }
 
+   my $f = $self->loop->new_future;
+
    my $on_read = sub {
       my ( $self, $buffref, $closed ) = @_;
 
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {
          if( $closed ) {
             $self->debug_printf( "ERROR closed" );
-            $on_error->( "Connection closed while awaiting header" );
+            $f->fail( "Connection closed while awaiting header" );
          }
          return 0;
       }
@@ -292,7 +291,7 @@ sub request
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
          $self->debug_printf( "BODY done" );
          $self->close if $connection_close;
-         $on_body_chunk->();
+         $f->done( $on_body_chunk->() );
          $self->_request_done;
          return undef; # Finished
       }
@@ -321,7 +320,7 @@ sub request
 
                   if( $closed ) {
                      $self->debug_printf( "ERROR closed" );
-                     $on_error->( "Connection closed while awaiting chunk trailer" );
+                     $f->fail( "Connection closed while awaiting chunk trailer" );
                   }
 
                   $$buffref =~ s/^(.*)$CRLF// or return 0;
@@ -332,7 +331,7 @@ sub request
                   # TODO: Actually use the trailer
 
                   $self->debug_printf( "BODY done" );
-                  $on_body_chunk->();
+                  $f->done( $on_body_chunk->() );
                   $self->_request_done;
                   return undef; # Finished
                }
@@ -346,7 +345,7 @@ sub request
 
                unless( $$buffref =~ s/^$CRLF// ) {
                   $self->debug_printf( "ERROR chunk without CRLF" );
-                  $on_error->( "Chunk of size $chunk_length wasn't followed by CRLF" );
+                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF" );
                   $self->close;
                }
 
@@ -357,7 +356,7 @@ sub request
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $on_error->( "Connection closed while awaiting chunk" );
+               $f->fail( "Connection closed while awaiting chunk" );
             }
             return 0;
          };
@@ -367,7 +366,7 @@ sub request
 
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
-            $on_body_chunk->();
+            $f->done( $on_body_chunk->() );
             $self->_request_done;
             return undef; # Finished
          }
@@ -385,14 +384,14 @@ sub request
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
                $self->close if $connection_close;
-               $on_body_chunk->();
+               $f->done( $on_body_chunk->() );
                $self->_request_done;
                return undef;
             }
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $on_error->( "Connection closed while awaiting body" );
+               $f->fail( "Connection closed while awaiting body" );
             }
             return 0;
          };
@@ -414,7 +413,7 @@ sub request
             $self->close;
 
             $self->debug_printf( "BODY done" );
-            $on_body_chunk->();
+            $f->done( $on_body_chunk->() );
             # $self already closed
             $self->_request_done;
             return undef;
@@ -449,7 +448,9 @@ sub request
 
    $self->{requests_in_flight}++;
 
-   push @{ $self->{responder_queue} }, [ $on_read, $on_error ];
+   push @{ $self->{responder_queue} }, [ $on_read, $f->fail_cb ];
+
+   return $f;
 }
 
 =head1 AUTHOR

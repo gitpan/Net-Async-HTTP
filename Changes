@@ -1,5 +1,11 @@
 Revision history for Net-Async-HTTP
 
+0.19    CHANGES:
+         * Allow $http->do_request to return a Future object yielding the
+           eventual response
+         * Added convenient $http->GET and ->HEAD methods
+         * Many internal neatenings and rewrites to better support Futures
+
 0.18    CHANGES:
          * Default host/port/SSLness from URL in HTTP::Request if given
          * Set Connection: keep-alive by default

@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 9;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -97,3 +97,5 @@ $peersock->print( "HTTP/1.1 200 OK$CRLF" .
 
 wait_for { $resp[3] };
 is( $resp[3]->code, 200, 'Request /3 responded OK' );
+
+done_testing;

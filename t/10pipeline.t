@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 16;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -129,3 +129,5 @@ foreach (qw( pipeline no_pipeline http/1.0 )) {
       },
    );
 }
+
+done_testing;

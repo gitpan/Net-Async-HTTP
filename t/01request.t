@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 87;
+use Test::More;
 use Test::Identity;
 use IO::Async::Test;
 use IO::Async::Loop;
@@ -53,7 +53,7 @@ sub do_test_req
       );
    };
 
-   $http->do_request(
+   my $future = $http->do_request(
       request => $request,
       ( $args{no_host} ? () : ( host => $host ) ),
 
@@ -62,6 +62,8 @@ sub do_test_req
       on_response => sub { $response = $_[0] },
       on_error    => sub { $error    = $_[0] },
    );
+
+   ok( defined $future, "\$future defined for $name" );
 
    wait_for { $peersock };
 
@@ -98,10 +100,16 @@ sub do_test_req
    $peersock->syswrite( $args{response} );
    $peersock->close if $args{close_after_response};
 
+   # Future shouldn't be ready yet
+   ok( !$future->is_ready, "\$future is not ready before response given for $name" );
+
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };
 
    identical( $response->request, $request, "\$response->request is \$request for $name" );
+
+   ok( $future->is_ready, "\$future is now ready after response given for $name" );
+   identical( scalar $future->get, $response, "\$future->get yields \$response for $name" );
 
    if( $args{expect_error} ) {
       ok( defined $error, "Expected error for $name" );
@@ -448,3 +456,5 @@ do_test_req( "request-implied host",
 
    expect_res_code => 200,
 );
+
+done_testing;

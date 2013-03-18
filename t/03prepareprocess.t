@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 5;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -76,6 +76,8 @@ undef $response;
 wait_for { defined $response };
 
 is( $response_header_X, "Splot", 'Response processed' );
+
+done_testing;
 
 package TestingHTTP;
 use base qw( Net::Async::HTTP );

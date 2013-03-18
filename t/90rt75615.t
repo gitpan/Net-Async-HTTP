@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -98,3 +98,5 @@ wait_for { defined $response };
 
 is( $response->content_type, "text/plain", '$response->content_type' );
 is( $response->content, "OK", '$response->content' );
+
+done_testing;

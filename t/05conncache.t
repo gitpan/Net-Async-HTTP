@@ -3,7 +3,8 @@
 use strict;
 use warnings;
 
-use Test::More tests => 3 * 14;
+use Test::More;
+use Test::Identity;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -51,12 +52,14 @@ foreach my $close ( 0, 1, 2 ) {
    # placate IO::Async bug where this returns () instead of 0
    is( scalar $http->children || 0, 0, 'scalar $http->children 0 initially' );
 
-   $http->do_request(
+   my $future = $http->do_request(
       uri => URI->new( "http://host$close/first" ),
 
       on_response => sub { $response = $_[0] },
       on_error    => sub { die "Test died early - $_[0]" },
    );
+
+   ok( defined $future, 'defined $future' );
 
    wait_for { $peersock };
    is( $connections, 1, '->connect called once for first request' );
@@ -69,6 +72,8 @@ foreach my $close ( 0, 1, 2 ) {
    my $req_firstline = $1;
 
    is( $req_firstline, "GET /first HTTP/1.1", 'First line for first request' );
+
+   ok( !$future->is_ready, '$future is not ready before response given' );
 
    $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
                         ( $close == 2 ? "" : "Content-Length: 3$CRLF" ) .
@@ -89,14 +94,16 @@ foreach my $close ( 0, 1, 2 ) {
    }
 
    is( $response->content, "1st", 'Content of first response' );
+   identical( scalar $future->get, $response, '$future->get for first request' );
 
    my $inner_response;
-   $http->do_request(
+   my $inner_future;
+   $future = $http->do_request(
       uri => URI->new( "http://host$close/second" ),
 
       on_response => sub {
          $response = $_[0];
-         $http->do_request(
+         $inner_future = $http->do_request(
             uri => URI->new( "http://host$close/inner" ),
             on_response => sub { $inner_response = $_[0] },
             on_error    => sub { die "Test died early - $_[0]" },
@@ -124,6 +131,8 @@ foreach my $close ( 0, 1, 2 ) {
 
    is( $req_firstline, "GET /second HTTP/1.1", 'First line for second request' );
 
+   ok( !$future->is_ready, '$future is not ready before response given for second request' );
+
    $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
                         ( $close == 2 ? "" : "Content-Length: 3$CRLF" ) .
                         "Content-Type: text/plain$CRLF" .
@@ -136,6 +145,9 @@ foreach my $close ( 0, 1, 2 ) {
    wait_for { defined $response };
 
    is( $response->content, "2nd", 'Content of second response' );
+   identical( scalar $future->get, $response, '$future->get for second request' );
+
+   ok( defined $inner_future, 'defined $inner_future' );
 
    wait_for { $peersock };
 
@@ -166,6 +178,7 @@ foreach my $close ( 0, 1, 2 ) {
    wait_for { defined $inner_response };
 
    is( $inner_response->content, "3rd", 'Content of inner response' );
+   identical( scalar $inner_future->get, $inner_response, '$inner_future->get for inner request' );
 
    if( $close ) {
       is( scalar $http->children, 0, 'scalar $http->children now 0 again after inner response' );
@@ -178,3 +191,5 @@ foreach my $close ( 0, 1, 2 ) {
    undef $peersock;
    wait_for { scalar $http->children == 0 };
 }
+
+done_testing;

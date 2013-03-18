@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2013 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -25,6 +25,8 @@ use HTTP::Request::Common qw();
 
 use IO::Async::Stream;
 use IO::Async::Loop 0.31; # for ->connect( extensions )
+
+use Future::Utils qw( repeat );
 
 use Socket qw( SOCK_STREAM );
 
@@ -76,7 +78,7 @@ one such object will be needed per program to support any number of requests.
 
 This module optionally supports SSL connections, if L<IO::Async::SSL> is
 installed. If so, SSL can be requested either by passing a URI with the
-C<https> scheme, or by passing the a true value as the C<SSL> parameter.
+C<https> scheme, or by passing a true value as the C<SSL> parameter.
 
 =cut
 
@@ -176,9 +178,6 @@ sub get_connection
    my $self = shift;
    my %args = @_;
 
-   my $on_ready = delete $args{on_ready} or croak "Expected 'on_ready' as a CODE ref";
-   my $on_error = delete $args{on_error} or croak "Expected 'on_error' as a CODE ref";
-
    my $loop = $self->get_loop or croak "Cannot ->get_connection without a Loop";
 
    my $host = delete $args{host};
@@ -188,8 +187,7 @@ sub get_connection
    my $key = "$host:$port";
 
    if( my $conn = $connections->{$key} ) {
-      $conn->run_when_ready( $on_ready, $on_error );
-      return;
+      return $conn->new_ready_future;
    }
 
    my $conn = Net::Async::HTTP::Protocol->new(
@@ -208,6 +206,8 @@ sub get_connection
 
    $connections->{$key} = $conn;
 
+   my $f = $conn->new_ready_future;
+
    if( $args{SSL} ) {
       require IO::Async::SSL;
       IO::Async::SSL->VERSION( 0.04 );
@@ -216,7 +216,7 @@ sub get_connection
 
       $args{on_ssl_error} = sub {
          delete $connections->{$key};
-         $on_error->( "$host:$port SSL error [$_[0]]" );
+         $f->fail( "$host:$port SSL error [$_[0]]" );
       };
    }
 
@@ -226,12 +226,12 @@ sub get_connection
 
       on_resolve_error => sub {
          delete $connections->{$key};
-         $on_error->( "$host:$port not resolvable [$_[0]]" );
+         $f->fail( "$host:$port not resolvable [$_[0]]" );
       },
 
       on_connect_error => sub {
          delete $connections->{$key};
-         $on_error->( "$host:$port not contactable [$_[-1]]" );
+         $f->fail( "$host:$port not contactable [$_[-1]]" );
       },
 
       %args,
@@ -239,7 +239,7 @@ sub get_connection
       ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
    );
 
-   $conn->run_when_ready( $on_ready, $on_error );
+   return $f;
 }
 
 =head2 $http->do_request( %args )
@@ -378,75 +378,79 @@ fail with the same error.
 
 =back
 
+=head2 $future = $http->do_request( %args )
+
+This method also returns a L<Future>, which will eventually yield the (final
+non-redirect) C<HTTP::Response>. If returning a future, then the
+C<on_response>, C<on_header> and C<on_error> callbacks are optional.
+
 =cut
 
-sub do_request
+sub _do_one_request
 {
    my $self = shift;
    my %args = @_;
 
-   my ( $on_response, $on_header );
-   $on_response  = $args{on_response} or
-      $on_header = $args{on_header}   or croak "Expected 'on_response' or 'on_header' as CODE ref";
-   my $on_error     = $args{on_error} or croak "Expected 'on_error' as a CODE ref";
-   my $request_body = $args{request_body};
+   my $host    = delete $args{host};
+   my $port    = delete $args{port};
+   my $timer   = delete $args{timer};
+   my $request = delete $args{request};
 
-   my $max_redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
-   my $timeout       = defined $args{timeout}       ? $args{timeout}       : $self->{timeout};
+   $self->prepare_request( $request );
 
-   my $host = delete $args{host};
-   my $port = delete $args{port};
-   my $ssl;
+   $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
 
-   my $timer = $args{timer};
-   if( !$timer and defined $timeout ) {
-      $timer = Net::Async::HTTP::Timer->new( delay => $timeout );
-      $self->add_child( $timer );
-      $timer->start;
+   return $self->get_connection(
+      host => $args{proxy_host} || $self->{proxy_host} || $host,
+      port => $args{proxy_port} || $self->{proxy_port} || $port,
+      SSL  => $args{SSL},
+      ( map { m/^SSL_/ ? ( $_ => $args{$_} ) : () } keys %args ),
+   )->and_then( sub {
+      my ( $f ) = @_;
 
-      my $inner_on_response = $on_response;
-      $on_response = $self->_capture_weakself( sub {
-         my $self = shift;
-         $timer->stop;
-         $self->remove_child( $timer );
-         goto $inner_on_response;
-      } );
-
-      my $inner_on_error = $on_error;
-      $on_error = $self->_capture_weakself( sub {
-         my $self = shift;
-         $timer->stop;
-         $self->remove_child( $timer );
-         goto $inner_on_error;
-      } );
-   }
-
-   my $on_header_redir = $self->_capture_weakself( sub {
-      my $self = shift;
-      return if $timer and $timer->expired;
+      my ( $conn ) = $f->get;
+      return $f if $timer and $timer->expired;
 
       $timer->set_on_expire( sub {
-         $on_error->( "Timed out" );
+         $conn->error_all( "Timed out" );
+         $conn->close;
       } ) if $timer;
 
-      my ( $response ) = @_;
+      return $conn->request(
+         request => $request,
+         %args,
+      );
+   } );
+}
 
-      if( !$response->is_redirect or $max_redirects == 0 ) {
-         $self->process_response( $response );
+sub _do_request
+{
+   my $self = shift;
+   my %args = @_;
 
-         return $on_header->( $response ) if $on_header;
-         return sub {
-            return $on_response->( $response ) unless @_;
+   my $host = $args{host};
+   my $port = $args{port};
+   my $ssl  = $args{SSL};
 
-            $response->add_content( @_ );
-         };
-      }
+   my $timer = $args{timer};
 
-      # Ignore body but handle redirect at the end of it
-      return sub {
-         return if @_;
+   my $on_header = delete $args{on_header};
+   my $on_error  = $args{on_error};
 
-         my $location = $response->header( "Location" );
+   my $redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
+
+   my $request = $args{request};
+   my $response;
+   # Defeat prototype
+   my $future = &repeat( $self->_capture_weakself( sub {
+      my $self = shift;
+      my ( $previous_f ) = @_;
+
+      if( $previous_f ) {
+         my $previous_response = $previous_f->get;
+         $args{previous_response} = $previous_response;
+
+         my $location = $previous_response->header( "Location" );
 
          if( $location =~ m{^http(?:s?)://} ) {
             # skip
@@ -456,34 +460,18 @@ sub do_request
             $location = "http://$hostport" . $location;
          }
          else {
-            $on_error->( "Unrecognised Location: $location" );
-            return;
+            return $self->loop->new_future->fail( "Unrecognised Location: $location" );
          }
 
          my $loc_uri = URI->new( $location );
          unless( $loc_uri ) {
-            $on_error->( "Unable to parse '$location' as a URI" );
-            return;
+            return $self->loop->new_future->fail( "Unable to parse '$location' as a URI" );
          }
 
-         $args{on_redirect}->( $response, $location ) if $args{on_redirect};
-         $args{timer} = $timer;
+         $args{on_redirect}->( $previous_response, $location ) if $args{on_redirect};
 
-         $self->do_request(
-            %args,
-            uri => $loc_uri,
-            max_redirects => $max_redirects - 1,
-            previous_response => $response,
-         );
+         %args = $self->_make_request_for_uri( $loc_uri, %args );
       }
-   } );
-
-   my $request;
-   if( $args{request} ) {
-      $request = delete $args{request};
-      ref $request and $request->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
-
-      $ssl = $args{SSL};
 
       my $uri = $request->uri;
       if( defined $uri->scheme and $uri->scheme =~ m/^http(s?)$/ ) {
@@ -491,85 +479,172 @@ sub do_request
          $port = $uri->port if !defined $port;
          $ssl = ( $uri->scheme eq "https" );
       }
+
+      defined $host or croak "Expected 'host'";
+      defined $port or $port = ( $ssl ? HTTPS_PORT : HTTP_PORT );
+
+      $self->_do_one_request(
+         host => $host,
+         port => $port,
+         %args,
+         on_header => $self->_capture_weakself( sub {
+            my $self = shift;
+            return if $timer and $timer->expired;
+
+            $timer->set_on_expire( sub {
+               $on_error->( "Timed out" );
+            } ) if $timer;
+
+            ( $response ) = @_;
+
+            return $on_header->( $response ) unless $response->is_redirect;
+
+            # Consume and discard the entire body of a redirect
+            return sub {
+               return if @_;
+               return $response;
+            };
+         } ),
+      );
+   } ),
+   while => sub {
+      my $f = shift;
+      return 0 if $f->failure;
+      return $response->is_redirect && $redirects--;
+   } );
+
+   $future->on_done( $self->_capture_weakself( sub {
+      my $self = shift;
+      my $response = shift;
+      $self->process_response( $response );
+   } ) );
+
+   $future->on_fail( $args{on_error} ) if $args{on_error};
+
+   return $future;
+}
+
+sub do_request
+{
+   my $self = shift;
+   my %args = @_;
+
+   if( my $uri = delete $args{uri} ) {
+      %args = $self->_make_request_for_uri( $uri, %args );
    }
-   elsif( $args{uri} ) {
-      my $uri = delete $args{uri};
-      ref $uri and $uri->isa( "URI" ) or croak "Expected 'uri' as a URI reference";
 
-      my $method = delete $args{method} || "GET";
-
-      $host = $uri->host;
-      $port = $uri->port;
-      my $path = $uri->path_query;
-
-      $ssl = ( $uri->scheme eq "https" );
-
-      $path = "/" if $path eq "";
-
-      if( $method eq "POST" ) {
-         defined $args{content} or croak "Expected 'content' with POST method";
-
-         # Lack of content_type didn't used to be a failure condition:
-         ref $args{content} or defined $args{content_type} or
-            carp "No 'content_type' was given with 'content'";
-
-         # This will automatically encode a form for us
-         $request = HTTP::Request::Common::POST( $path, Content => $args{content}, Content_Type => $args{content_type} );
-      }
-      else {
-         $request = HTTP::Request->new( $method, $path );
-      }
-
-      $request->protocol( "HTTP/1.1" );
-      $request->header( Host => $host );
-
-      my ( $user, $pass );
-
-      if( defined $uri->userinfo ) {
-         ( $user, $pass ) = split( m/:/, $uri->userinfo, 2 );
-      }
-      elsif( defined $args{user} and defined $args{pass} ) {
-         $user = $args{user};
-         $pass = $args{pass};
-      }
-
-      if( defined $user and defined $pass ) {
-         $request->authorization_basic( $user, $pass );
+   if( $args{on_header} ) {
+      # ok
+   }
+   elsif( my $on_response = delete $args{on_response} or defined wantarray ) {
+      $args{on_header} = sub {
+         my ( $response ) = @_;
+         return sub {
+            if( @_ ) {
+               $response->add_content( @_ );
+            }
+            else {
+               $on_response->( $response ) if $on_response;
+               return $response;
+            }
+         };
       }
    }
+   else {
+      croak "Expected 'on_response' or 'on_header' as CODE ref or to return a Future";
+   }
 
-   $self->prepare_request( $request );
+   my $timeout = defined $args{timeout} ? $args{timeout} : $self->{timeout};
 
-   defined $host or croak "Expected 'host'";
-   defined $port or $port = ( $ssl ? HTTPS_PORT : HTTP_PORT );
+   if( defined $timeout ) {
+      my $timer = Net::Async::HTTP::Timer->new( delay => $timeout );
+      $self->add_child( $timer );
+      $timer->start;
 
-   $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
+      my $on_error = $args{on_error};
+      $args{on_error} = $self->_capture_weakself( sub {
+         my $self = shift;
+         $timer->stop;
+         $self->remove_child( $timer );
+         goto $on_error;
+      } );
 
-   $self->get_connection(
-      host => $args{proxy_host} || $self->{proxy_host} || $host,
-      port => $args{proxy_port} || $self->{proxy_port} || $port,
-      SSL  => $ssl,
+      $args{timer} = $timer;
+   }
 
-      on_error => $on_error,
+   $self->_do_request( %args );
+}
 
-      on_ready => sub {
-         my ( $conn ) = @_;
-         return if $timer and $timer->expired;
+sub _make_request_for_uri
+{
+   my $self = shift;
+   my ( $uri, %args ) = @_;
 
-         $conn->request(
-            request => $request,
-            request_body => $request_body,
-            previous_response => $args{previous_response},
-            on_header => $on_header_redir,
-            on_error  => $on_error,
-         );
+   ref $uri and $uri->isa( "URI" ) or croak "Expected 'uri' as a URI reference";
 
-         $timer->set_on_expire( sub {
-            $conn->error_all( "Timed out" );
-            $conn->close;
-         } ) if $timer;
-      },
-   );
+   my $method = delete $args{method} || "GET";
+
+   $args{host} = $uri->host;
+   $args{port} = $uri->port;
+   $args{SSL}  = ( $uri->scheme eq "https" );
+
+   my $request;
+
+   if( $method eq "POST" ) {
+      defined $args{content} or croak "Expected 'content' with POST method";
+
+      # Lack of content_type didn't used to be a failure condition:
+      ref $args{content} or defined $args{content_type} or
+      carp "No 'content_type' was given with 'content'";
+
+      # This will automatically encode a form for us
+      $request = HTTP::Request::Common::POST( $uri, Content => $args{content}, Content_Type => $args{content_type} );
+   }
+   else {
+      $request = HTTP::Request->new( $method, $uri );
+   }
+
+   $request->protocol( "HTTP/1.1" );
+   $request->header( Host => $uri->host );
+
+   my ( $user, $pass );
+
+   if( defined $uri->userinfo ) {
+      ( $user, $pass ) = split( m/:/, $uri->userinfo, 2 );
+   }
+   elsif( defined $args{user} and defined $args{pass} ) {
+      $user = $args{user};
+      $pass = $args{pass};
+   }
+
+   if( defined $user and defined $pass ) {
+      $request->authorization_basic( $user, $pass );
+   }
+
+   $args{request} = $request;
+
+   return %args;
+}
+
+=head2 $future = $http->GET( $uri, %args )
+
+=head2 $future = $http->HEAD( $uri, %args )
+
+Convenient wrappers for using the C<GET> or C<HEAD> methods with a C<URI>
+object and few if any other arguments, returning a C<Future>.
+
+=cut
+
+sub GET
+{
+   my $self = shift;
+   return $self->do_request( method => "GET", uri => @_ );
+}
+
+sub HEAD
+{
+   my $self = shift;
+   return $self->do_request( method => "HEAD", uri => @_ );
 }
 
 =head1 SUBCLASS METHODS
@@ -610,6 +685,38 @@ sub process_response
 
    $self->{cookie_jar}->extract_cookies( $response ) if $self->{cookie_jar};
 }
+
+=head1 EXAMPLES
+
+=head2 Concurrent GET
+
+The C<Future>-returning C<GET> method makes it easy to await multiple URLs at
+once.
+
+ my @URLs = ( ... );
+
+ my $http = Net::Async::HTTP->new( ... );
+ $loop->add( $http );
+
+ my $future = Future->wait_all(
+    map {
+       my $url = $_;
+       $http->GET( $url )
+            ->on_done( sub {
+               my $response = shift;
+               say "$url succeeded: ", $response->code;
+               say "  Content-Type":", $response->content_type;
+            } )
+            ->on_fail( sub {
+               my $failure = shift;
+               say "$url failed: $failure";
+            } );
+    } @URLs
+ );
+
+ $loop->await( $future );
+
+=cut
 
 =head1 SEE ALSO
 

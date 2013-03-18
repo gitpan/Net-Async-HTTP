@@ -22,23 +22,16 @@ my $ua = Net::Async::HTTP->new(
 );
 $loop->add( $ua );
 
-$ua->do_request(
-   method => "GET",
-   uri    => URI->new( $ARGV[0] ),
-
-   on_response => sub {
+my $future = $ua->GET( URI->new( $ARGV[0] ) )
+   ->on_done( sub {
       my ( $response ) = @_;
 
       print $response->as_string;
-      $loop->loop_stop;
-   },
-
-   on_error => sub {
+   } )
+   ->on_fail( sub {
       my ( $message ) = @_;
 
       print STDERR "Failed - $message\n";
-      $loop->loop_stop;
-   }
-);
+   } );
 
-$loop->loop_forever;
+$loop->await( $future );

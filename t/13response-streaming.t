@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 15;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -173,3 +173,5 @@ is( $body, "Hello, world!$CRLF", '$body' );
 $peersock->close;
 
 wait_for { $body_is_done };
+
+done_testing;

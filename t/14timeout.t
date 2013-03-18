@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 11;
+use Test::More;
 use Test::Refcount;
 use IO::Async::Test;
 use IO::Async::Loop;
@@ -37,7 +37,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    my $errcount;
    my $error;
 
-   $http->do_request(
+   my $future = $http->do_request(
       uri => URI->new( "http://my.server/doc" ),
 
       timeout => 1, # Really quick for testing
@@ -50,8 +50,11 @@ local *Net::Async::HTTP::Protocol::connect = sub {
 
    wait_for { defined $error };
 
-   like( $error, qr/^Timed out/, 'Received timeout error' );
+   is( $error, "Timed out", 'Received timeout error' );
    is( $errcount, 1, 'on_error invoked once' );
+
+   ok( $future->is_ready, '$future is ready after timeout' );
+   is( scalar $future->failure, "Timed out", '$future->failure after timeout' );
 
    is_refcount( $http, 2, '$http refcount 2 after ->do_request with timeout fails' );
 }
@@ -60,7 +63,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    my $errcount;
    my $error;
 
-   $http->do_request(
+   my $future = $http->do_request(
       uri => URI->new( "http://my.server/redir" ),
 
       timeout => 1, # Really quick for testing
@@ -82,8 +85,11 @@ local *Net::Async::HTTP::Protocol::connect = sub {
 
    wait_for { defined $error };
 
-   like( $error, qr/^Timed out/, 'Received timeout error from redirect' );
+   is( $error, "Timed out", 'Received timeout error from redirect' );
    is( $errcount, 1, 'on_error invoked once from redirect' );
+
+   ok( $future->is_ready, '$future is ready after timeout' );
+   is( scalar $future->failure, "Timed out", '$future->failure after timeout' );
 }
 
 {
@@ -112,14 +118,16 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    );
 
    wait_for { defined $error };
-   like( $error, qr/^Timed out/, 'Received timeout error from pipeline' );
+   is( $error, "Timed out", 'Received timeout error from pipeline' );
    is( $errcount, 1, 'on_error invoked once from pipeline' );
 
    wait_for { defined $error2 };
-   like( $error2, qr/^Timed out/, 'Received timeout error from pipeline(2)' );
+   is( $error2, "Timed out", 'Received timeout error from pipeline(2)' );
    is( $errcount2, 1, 'on_error invoked once from pipeline(2)' );
 }
 
 $loop->remove( $http );
 
 is_oneref( $http, '$http has refcount 1 before EOF' );
+
+done_testing;

@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 7;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -136,3 +136,5 @@ do_test_req( "get cookie",
       'Content-Length' => 0,
    },
 );
+
+done_testing;

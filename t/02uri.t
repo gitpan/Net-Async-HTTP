@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 50;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -308,3 +308,5 @@ do_test_uri( "form POST",
    },
    expect_res_content => "Done",
 );
+
+done_testing;

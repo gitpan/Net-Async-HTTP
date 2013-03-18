@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 7;
+use Test::More;
 use IO::Async::Test;
 use IO::Async::Loop;
 
@@ -113,3 +113,5 @@ is_deeply( \%res_headers,
    },
    'Result headers for streaming PUT'
 );
+
+done_testing;
