@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.19';
+our $VERSION = '0.20';
 
 use Carp;
 
@@ -243,7 +243,7 @@ sub request
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {
          if( $closed ) {
             $self->debug_printf( "ERROR closed" );
-            $f->fail( "Connection closed while awaiting header" );
+            $f->fail( "Connection closed while awaiting header" ) unless $f->is_cancelled;
          }
          return 0;
       }
@@ -291,7 +291,7 @@ sub request
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
          $self->debug_printf( "BODY done" );
          $self->close if $connection_close;
-         $f->done( $on_body_chunk->() );
+         $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
          $self->_request_done;
          return undef; # Finished
       }
@@ -320,7 +320,7 @@ sub request
 
                   if( $closed ) {
                      $self->debug_printf( "ERROR closed" );
-                     $f->fail( "Connection closed while awaiting chunk trailer" );
+                     $f->fail( "Connection closed while awaiting chunk trailer" ) unless $f->is_cancelled;
                   }
 
                   $$buffref =~ s/^(.*)$CRLF// or return 0;
@@ -331,7 +331,7 @@ sub request
                   # TODO: Actually use the trailer
 
                   $self->debug_printf( "BODY done" );
-                  $f->done( $on_body_chunk->() );
+                  $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
                   $self->_request_done;
                   return undef; # Finished
                }
@@ -345,7 +345,7 @@ sub request
 
                unless( $$buffref =~ s/^$CRLF// ) {
                   $self->debug_printf( "ERROR chunk without CRLF" );
-                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF" );
+                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF" ) unless $f->is_cancelled;
                   $self->close;
                }
 
@@ -356,7 +356,7 @@ sub request
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting chunk" );
+               $f->fail( "Connection closed while awaiting chunk" ) unless $f->is_cancelled;
             }
             return 0;
          };
@@ -366,7 +366,7 @@ sub request
 
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
-            $f->done( $on_body_chunk->() );
+            $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
             $self->_request_done;
             return undef; # Finished
          }
@@ -384,14 +384,14 @@ sub request
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
                $self->close if $connection_close;
-               $f->done( $on_body_chunk->() );
+               $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
                $self->_request_done;
                return undef;
             }
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting body" );
+               $f->fail( "Connection closed while awaiting body" ) unless $f->is_cancelled;
             }
             return 0;
          };
@@ -413,7 +413,7 @@ sub request
             $self->close;
 
             $self->debug_printf( "BODY done" );
-            $f->done( $on_body_chunk->() );
+            $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
             # $self already closed
             $self->_request_done;
             return undef;

@@ -198,8 +198,7 @@ METHODS
     timeout => NUM
             Optional. Specifies a timeout in seconds, after which to give up
             on the request and fail it with an error. If this happens, the
-            error message will be `Timed out'. Any other pipelined requests
-            using the same connection will also fail with the same error.
+            error message will be `Timed out'.
 
   $future = $http->do_request( %args )
     This method also returns a Future, which will eventually yield the

@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.19';
+our $VERSION = '0.20';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -18,7 +18,6 @@ our $DEFAULT_MAX_IN_FLIGHT = 4;
 use Carp;
 
 use Net::Async::HTTP::Protocol;
-use Net::Async::HTTP::Timer;
 
 use HTTP::Request;
 use HTTP::Request::Common qw();
@@ -373,8 +372,7 @@ default to the value given in the constructor.
 
 Optional. Specifies a timeout in seconds, after which to give up on the
 request and fail it with an error. If this happens, the error message will be
-C<Timed out>. Any other pipelined requests using the same connection will also
-fail with the same error.
+C<Timed out>.
 
 =back
 
@@ -393,12 +391,9 @@ sub _do_one_request
 
    my $host    = delete $args{host};
    my $port    = delete $args{port};
-   my $timer   = delete $args{timer};
    my $request = delete $args{request};
 
    $self->prepare_request( $request );
-
-   $timer->configure( notifier_name => "$host:$port/..." ) if $timer;
 
    return $self->get_connection(
       host => $args{proxy_host} || $self->{proxy_host} || $host,
@@ -409,12 +404,6 @@ sub _do_one_request
       my ( $f ) = @_;
 
       my ( $conn ) = $f->get;
-      return $f if $timer and $timer->expired;
-
-      $timer->set_on_expire( sub {
-         $conn->error_all( "Timed out" );
-         $conn->close;
-      } ) if $timer;
 
       return $conn->request(
          request => $request,
@@ -432,15 +421,13 @@ sub _do_request
    my $port = $args{port};
    my $ssl  = $args{SSL};
 
-   my $timer = $args{timer};
-
    my $on_header = delete $args{on_header};
-   my $on_error  = $args{on_error};
 
    my $redirects = defined $args{max_redirects} ? $args{max_redirects} : $self->{max_redirects};
 
    my $request = $args{request};
    my $response;
+   my $reqf;
    # Defeat prototype
    my $future = &repeat( $self->_capture_weakself( sub {
       my $self = shift;
@@ -483,18 +470,12 @@ sub _do_request
       defined $host or croak "Expected 'host'";
       defined $port or $port = ( $ssl ? HTTPS_PORT : HTTP_PORT );
 
-      $self->_do_one_request(
+      return $reqf = $self->_do_one_request(
          host => $host,
          port => $port,
          %args,
          on_header => $self->_capture_weakself( sub {
             my $self = shift;
-            return if $timer and $timer->expired;
-
-            $timer->set_on_expire( sub {
-               $on_error->( "Timed out" );
-            } ) if $timer;
-
             ( $response ) = @_;
 
             return $on_header->( $response ) unless $response->is_redirect;
@@ -509,17 +490,10 @@ sub _do_request
    } ),
    while => sub {
       my $f = shift;
-      return 0 if $f->failure;
+      return 0 if $f->failure or $f->is_cancelled;
       return $response->is_redirect && $redirects--;
-   } );
-
-   $future->on_done( $self->_capture_weakself( sub {
-      my $self = shift;
-      my $response = shift;
-      $self->process_response( $response );
-   } ) );
-
-   $future->on_fail( $args{on_error} ) if $args{on_error};
+   },
+   return => $self->loop->new_future );
 
    return $future;
 }
@@ -556,23 +530,35 @@ sub do_request
 
    my $timeout = defined $args{timeout} ? $args{timeout} : $self->{timeout};
 
+   my $future = $self->_do_request( %args );
+
    if( defined $timeout ) {
-      my $timer = Net::Async::HTTP::Timer->new( delay => $timeout );
-      $self->add_child( $timer );
-      $timer->start;
-
-      my $on_error = $args{on_error};
-      $args{on_error} = $self->_capture_weakself( sub {
-         my $self = shift;
-         $timer->stop;
-         $self->remove_child( $timer );
-         goto $on_error;
-      } );
-
-      $args{timer} = $timer;
+      $future = Future->wait_any(
+         $future,
+         $self->loop->timeout_future( after => $timeout )
+                    ->transform( fail => sub { "Timed out" } ),
+      );
    }
 
-   $self->_do_request( %args );
+   $future->on_done( $self->_capture_weakself( sub {
+      my $self = shift;
+      my $response = shift;
+      $self->process_response( $response );
+   } ) );
+
+   $future->on_fail( $args{on_error} ) if $args{on_error};
+
+   # DODGY HACK:
+   # In void context we'll lose reference on the ->wait_any Future, so the
+   # timeout logic will never happen. So lets purposely create a cycle by
+   # capturing the $future in on_done/on_fail closures within itself. This
+   # conveniently clears them out to drop the ref when done.
+   if( !defined wantarray and $args{on_header} || $args{on_response} || $args{on_error} ) {
+      $future->on_done( sub { undef $future } );
+      $future->on_fail( sub { undef $future } );
+   }
+
+   return $future;
 }
 
 sub _make_request_for_uri

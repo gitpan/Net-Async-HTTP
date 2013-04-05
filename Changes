@@ -1,5 +1,11 @@
 Revision history for Net-Async-HTTP
 
+0.20    CHANGES:
+         * Improvements to timeout and cancellation handling
+         * Updated for Future 0.12; pass 'return' argument to
+           Future::Utils::repeat
+         * Use newer IO::Async::OS->socketpair in unit tests
+
 0.19    CHANGES:
          * Allow $http->do_request to return a Future object yielding the
            eventual response

@@ -24,12 +24,12 @@
       },
       "runtime" : {
          "requires" : {
-            "Future" : "0.09",
+            "Future" : "0.12",
             "Future::Utils" : "0",
             "HTTP::Request" : "0",
             "HTTP::Request::Common" : "0",
             "HTTP::Response" : "0",
-            "IO::Async::Loop" : "0.54",
+            "IO::Async::Loop" : "0.56",
             "IO::Async::Protocol::Stream" : "0.34",
             "IO::Async::Stream" : "0",
             "URI" : "0"
@@ -39,15 +39,11 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.19"
+         "version" : "0.20"
       },
       "Net::Async::HTTP::Protocol" : {
          "file" : "lib/Net/Async/HTTP/Protocol.pm",
-         "version" : "0.19"
-      },
-      "Net::Async::HTTP::Timer" : {
-         "file" : "lib/Net/Async/HTTP/Timer.pm",
-         "version" : "0.19"
+         "version" : "0.20"
       }
    },
    "release_status" : "stable",
@@ -56,5 +52,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.19"
+   "version" : "0.20"
 }

@@ -27,7 +27,7 @@ $loop->add( $http );
       my $self = shift;
       my %args = @_;
 
-      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
 
       $self->IO::Async::Protocol::connect(
          transport => IO::Async::Stream->new( handle => $selfsock )
@@ -75,7 +75,7 @@ $loop->add( $http );
       my $self = shift;
       my %args = @_;
 
-      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
 
       $self->IO::Async::Protocol::connect(
          transport => IO::Async::Stream->new( handle => $selfsock )

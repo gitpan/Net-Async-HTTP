@@ -46,7 +46,7 @@ sub do_test_req
       $args{host}    eq $host or die "Expected $args{host} eq $host";
       $args{service} eq "80"  or die "Expected $args{service} eq 80";
 
-      ( my $selfsock, $peersock ) = $self->loop->socketpair() or die "Cannot create socket pair - $!";
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
 
       $self->IO::Async::Protocol::connect(
          transport => IO::Async::Stream->new( handle => $selfsock )
