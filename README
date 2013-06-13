@@ -89,6 +89,20 @@ PARAMETERS
             to `bind()' to. For more detail, see the documentation in
             IO::Async::Connector.
 
+    fail_on_error => BOOL
+            Optional. Affects the behaviour of response handling when a
+            `4xx' or `5xx' response code is received. When false, these
+            responses will be processed as other responses and passed to the
+            `on_response' callback, or used to set the successful result of
+            the Future. When true, such an error response causes the
+            `on_error' handling or a failed Future instead. The HTTP
+            response and request objects will be passed as well as the code
+            and message.
+
+             $on_error->( "$code $message", $response, $request )
+
+             ( $code_message, $response, $request ) = $f->failure
+
 METHODS
   $http->do_request( %args )
     Send an HTTP request to a server, and set up the callbacks to receive a
@@ -146,6 +160,13 @@ METHODS
     content_type => STRING
             The type of non-form data `content'.
 
+    expect_continue => BOOL
+            Optional. If true, sets the `Expect' request header to the value
+            `100-continue' and does not send the `request_body' parameter
+            until a `100 Continue' response is received from the server. If
+            an error response is received then the `request_body' code, if
+            present, will not be invoked.
+
     user => STRING
     pass => STRING
             Optional. If both are given, the HTTP Basic Authorization header
@@ -183,6 +204,12 @@ METHODS
             error message.
 
              $on_error->( $message )
+
+            If this is invoked because of a received `4xx' or `5xx' error
+            code in an HTTP response, it will be invoked with the response
+            and request objects as well.
+
+             $on_error->( $message, $response, $request )
 
     on_redirect => CODE
             Optional. A callback that is invoked if a redirect response is

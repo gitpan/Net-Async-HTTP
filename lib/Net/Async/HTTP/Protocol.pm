@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 use Carp;
 
@@ -70,31 +70,14 @@ sub configure
    $self->SUPER::configure( %params );
 }
 
-# TODO: IO::Async::Protocol::Stream ought to do this
 sub setup_transport
 {
    my $self = shift;
    my ( $transport ) = @_;
    $self->SUPER::setup_transport( $transport );
 
-   $transport->configure(
-      on_write_eof => $self->_replace_weakself( "on_write_eof" ),
-   );
-
    $self->debug_printf( "CONNECTED" );
    $self->ready;
-}
-
-sub teardown_transport
-{
-   my $self = shift;
-   my ( $transport ) = @_;
-
-   $transport->configure(
-      on_write_eof => undef,
-   );
-
-   $self->SUPER::teardown_transport( $transport );
 }
 
 sub should_pipeline
@@ -228,11 +211,16 @@ sub request
    $self->debug_printf( "REQUEST %s", $req->uri );
 
    my $request_body = $args{request_body};
+   my $expect_continue = !!$args{expect_continue};
 
    my $method = $req->method;
 
    if( $method eq "POST" or $method eq "PUT" or length $req->content ) {
       $req->init_header( "Content-Length", length $req->content );
+   }
+
+   if( $expect_continue ) {
+      $req->init_header( "Expect", "100-continue" );
    }
 
    my $f = $self->loop->new_future;
@@ -257,12 +245,18 @@ sub request
             s/^\s+//, s/\s+$// for $value;
             push @headers, $name => $value;
          } );
-         $header->header( @headers );
+         $header->header( @headers ) if @headers;
       }
 
       my $protocol = $header->protocol;
       if( $protocol =~ m{^HTTP/1\.(\d+)$} and $1 >= 1 ) {
          $self->{can_pipeline} = 1;
+      }
+
+      if( $header->code =~ m/^1/ ) { # 1xx is not a final response
+         $self->debug_printf( "HEADER [provisional] %s", $header->status_line );
+         $self->write( $request_body ) if $request_body and $expect_continue;
+         return 1;
       }
 
       $header->request( $req );
@@ -444,7 +438,7 @@ sub request
                  $CRLF . $CRLF .
                  $req->content );
 
-   $self->write( $request_body ) if $request_body;
+   $self->write( $request_body ) if $request_body and !$expect_continue;
 
    $self->{requests_in_flight}++;
 
