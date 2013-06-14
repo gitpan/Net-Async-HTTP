@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -31,6 +31,9 @@ use Socket qw( SOCK_STREAM );
 
 use constant HTTP_PORT  => 80;
 use constant HTTPS_PORT => 443;
+
+use constant READ_LEN  => 64*1024; # 64 KiB
+use constant WRITE_LEN => 64*1024; # 64 KiB
 
 =head1 NAME
 
@@ -79,13 +82,59 @@ This module optionally supports SSL connections, if L<IO::Async::SSL> is
 installed. If so, SSL can be requested either by passing a URI with the
 C<https> scheme, or by passing a true value as the C<SSL> parameter.
 
+=head2 Connection Pooling
+
+There are three ways in which connections to HTTP server hosts are managed by
+this object, controlled by the value of C<max_connections_per_host>. This
+controls when new connections are established to servers, as compared to
+waiting for existing connections to be free, as new requests are made to them.
+
+They are:
+
+=over 2
+
+=item max_connections_per_host = 1
+
+This is the default setting. In this mode, there will be one connection per
+host on which there are active or pending requests. If new requests are made
+while an existing one is outstanding, they will be queued to wait for it.
+
+If pipelining is active on the connection (because both the C<pipeline> option
+is true and the connection is known to be an HTTP/1.1 server), then requests
+will be pipelined into the connection awaiting their response. If not, they
+will be queued awaiting a response to the previous before sending the next.
+
+=item max_connections_per_host > 1
+
+In this mode, there can be more than one connection per host. If a new request
+is made, it will try to re-use idle connections if there are any, or if they
+are all busy it will create a new connection to the host, up to the configured
+limit.
+
+=item max_connections_per_host = 0
+
+In this mode, there is no upper limit to the number of connections per host.
+Every new request will try to reuse an idle connection, or else create a new
+one if all the existing ones are busy.
+
+=back
+
+These modes all apply per hostname / server port pair; they do not affect the
+behaviour of connections made to differing hostnames, or differing ports on
+the same hostname.
+
 =cut
 
 sub _init
 {
    my $self = shift;
 
-   $self->{connections} = {}; # { "$host:$port" } -> $conn
+   $self->{connections} = {}; # { "$host:$port" } -> [ @connections ]
+
+   $self->{read_len}  = READ_LEN;
+   $self->{write_len} = WRITE_LEN;
+
+   $self->{max_connections_per_host} = 1;
 }
 
 =head1 PARAMETERS
@@ -111,6 +160,13 @@ pipelining is enabled and supported on that host. If more requests are made
 over this limit they will be queued internally by the object and not sent to
 the server until responses are received. If not supplied, will default to 4.
 Give 0 to disable the limit entirely.
+
+=item max_connections_per_host => INT
+
+Optional. Controls the maximum number of connections per hostname/server port
+pair, before requests will be queued awaiting one to be free. If not supplied,
+will default to 1. Give 0 to disable the limit entirely. See also the
+L</Connection Pooling> section documented above.
 
 =item timeout => NUM
 
@@ -157,6 +213,14 @@ objects will be passed as well as the code and message.
 
  ( $code_message, $response, $request ) = $f->failure
 
+=item read_len => INT
+
+=item write_len => INT
+
+Optional. Used to set the reading and writing buffer lengths on the underlying
+C<IO::Async::Stream> objects that represent connections to the server. If not
+define, a default of 64 KiB will be used.
+
 =back
 
 =cut
@@ -166,9 +230,9 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( user_agent max_redirects max_in_flight
+   foreach (qw( user_agent max_redirects max_in_flight max_connections_per_host
       timeout proxy_host proxy_port cookie_jar pipeline local_host local_port
-      local_addrs local_addr fail_on_error ))
+      local_addrs local_addr fail_on_error read_len write_len ))
    {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
@@ -185,40 +249,17 @@ sub configure
 
 =cut
 
-sub get_connection
+sub connect_connection
 {
    my $self = shift;
    my %args = @_;
 
-   my $loop = $self->get_loop or croak "Cannot ->get_connection without a Loop";
+   my $conn = delete $args{conn};
 
    my $host = delete $args{host};
    my $port = delete $args{port};
 
-   my $connections = $self->{connections};
-   my $key = "$host:$port";
-
-   if( my $conn = $connections->{$key} ) {
-      return $conn->new_ready_future;
-   }
-
-   my $conn = Net::Async::HTTP::Protocol->new(
-      notifier_name => $key,
-      max_in_flight => $self->{max_in_flight},
-      pipeline => $self->{pipeline},
-      on_closed => sub {
-         my $conn = shift;
-
-         $conn->remove_from_parent;
-         delete $connections->{$key};
-      },
-   );
-
-   $self->add_child( $conn );
-
-   $connections->{$key} = $conn;
-
-   my $f = $conn->new_ready_future;
+   my $on_error  = $args{on_error};
 
    if( $args{SSL} ) {
       require IO::Async::SSL;
@@ -227,8 +268,7 @@ sub get_connection
       push @{ $args{extensions} }, "SSL";
 
       $args{on_ssl_error} = sub {
-         delete $connections->{$key};
-         $f->fail( "$host:$port SSL error [$_[0]]" );
+         $on_error->( $conn, "$host:$port SSL error [$_[0]]" );
       };
    }
 
@@ -236,20 +276,87 @@ sub get_connection
       host     => $host,
       service  => $port,
 
+      on_connected => sub {
+         my $conn = shift;
+         my $stream = $conn->transport;
+
+         $stream->configure(
+            read_len  => $self->{read_len},
+            write_len => $self->{write_len},
+         );
+      },
+
       on_resolve_error => sub {
-         delete $connections->{$key};
-         $f->fail( "$host:$port not resolvable [$_[0]]" );
+         $on_error->( $conn, "$host:$port not resolvable [$_[0]]" );
       },
 
       on_connect_error => sub {
-         delete $connections->{$key};
-         $f->fail( "$host:$port not contactable [$_[-1]]" );
+         $on_error->( $conn, "$host:$port not contactable [$_[-1]]" );
       },
 
       %args,
 
       ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
    );
+}
+
+sub get_connection
+{
+   my $self = shift;
+   my %args = @_;
+
+   my $loop = $self->get_loop or croak "Cannot ->get_connection without a Loop";
+
+   my $host = $args{host};
+   my $port = $args{port};
+
+   my $key = "$host:$port";
+   my $conns = $self->{connections}{$key} ||= [];
+   my $ready_queue = $self->{ready_queue}{$key} ||= [];
+
+   my $f = $args{future} || $self->loop->new_future;
+
+   # Have a look to see if there are any idle connected ones first
+   foreach my $conn ( @$conns ) {
+      $conn->is_idle and $conn->transport and return $f->done( $conn );
+   }
+
+   push @$ready_queue, $f unless $args{future};
+
+   if( !$self->{max_connections_per_host} or @$conns < $self->{max_connections_per_host} ) {
+      my $conn = Net::Async::HTTP::Protocol->new(
+         notifier_name => "$host:$port",
+         max_in_flight => $self->{max_in_flight},
+         pipeline      => $self->{pipeline},
+         ready_queue   => $ready_queue,
+         on_closed => sub {
+            my $conn = shift;
+
+            $conn->remove_from_parent;
+            @$conns = grep { $_ != $conn } @$conns;
+         },
+      );
+
+      $self->add_child( $conn );
+      push @$conns, $conn;
+
+      $self->connect_connection( %args,
+         conn => $conn,
+         on_error => sub {
+            my $conn = shift;
+
+            $f->fail( @_ );
+
+            @$conns = grep { $_ != $conn } @$conns;
+            @$ready_queue = grep { $_ != $f } @$ready_queue;
+
+            if( @$ready_queue ) {
+               # Requeue another connection attempt as there's still more to do
+               $self->get_connection( %args, future => $ready_queue->[0] );
+            }
+         },
+      );
+   }
 
    return $f;
 }

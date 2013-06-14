@@ -8,7 +8,7 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 use Carp;
 
@@ -50,7 +50,7 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( pipeline max_in_flight )) {
+   foreach (qw( pipeline max_in_flight ready_queue )) {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
@@ -59,7 +59,6 @@ sub configure
          my $self = shift;
 
          $self->debug_printf( "CLOSED" );
-         $self->error_on_ready( "Connection closed" );
 
          $on_closed->( $self );
       };
@@ -102,7 +101,7 @@ sub ready
 {
    my $self = shift;
 
-   my $queue = $self->{on_ready_queue} or return;
+   my $queue = $self->{ready_queue} or return;
 
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
@@ -130,20 +129,6 @@ sub _request_done
    $self->{requests_in_flight}--;
    $self->debug_printf( "DONE remaining in-flight=$self->{requests_in_flight}" );
    $self->ready;
-}
-
-sub new_ready_future
-{
-   my $self = shift;
-
-   push @{ $self->{on_ready_queue} }, my $f = $self->loop->new_future;
-
-   if( $self->transport ) {
-      # ready might be better renamed to ``try_ready'' or something.
-      $self->ready;
-   }
-
-   return $f;
 }
 
 sub on_read
@@ -178,15 +163,6 @@ sub on_write_eof
    $self->error_all( "Connection closed" );
 }
 
-sub error_on_ready
-{
-   my $self = shift;
-
-   while( my $head = shift @{ $self->{on_ready_queue} } ) {
-      $head->fail( @_ );
-   }
-}
-
 sub error_all
 {
    my $self = shift;
@@ -194,8 +170,6 @@ sub error_all
    while( my $head = shift @{ $self->{responder_queue} } ) {
       $head->[ON_ERROR]->( @_ );
    }
-
-   $self->error_on_ready( @_ );
 }
 
 sub request

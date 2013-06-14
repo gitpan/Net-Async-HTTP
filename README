@@ -43,6 +43,42 @@ DESCRIPTION
     installed. If so, SSL can be requested either by passing a URI with the
     `https' scheme, or by passing a true value as the `SSL' parameter.
 
+  Connection Pooling
+    There are three ways in which connections to HTTP server hosts are
+    managed by this object, controlled by the value of
+    `max_connections_per_host'. This controls when new connections are
+    established to servers, as compared to waiting for existing connections
+    to be free, as new requests are made to them.
+
+    They are:
+
+    max_connections_per_host = 1
+      This is the default setting. In this mode, there will be one
+      connection per host on which there are active or pending requests. If
+      new requests are made while an existing one is outstanding, they will
+      be queued to wait for it.
+
+      If pipelining is active on the connection (because both the `pipeline'
+      option is true and the connection is known to be an HTTP/1.1 server),
+      then requests will be pipelined into the connection awaiting their
+      response. If not, they will be queued awaiting a response to the
+      previous before sending the next.
+
+    max_connections_per_host > 1
+      In this mode, there can be more than one connection per host. If a new
+      request is made, it will try to re-use idle connections if there are
+      any, or if they are all busy it will create a new connection to the
+      host, up to the configured limit.
+
+    max_connections_per_host = 0
+      In this mode, there is no upper limit to the number of connections per
+      host. Every new request will try to reuse an idle connection, or else
+      create a new one if all the existing ones are busy.
+
+    These modes all apply per hostname / server port pair; they do not
+    affect the behaviour of connections made to differing hostnames, or
+    differing ports on the same hostname.
+
 PARAMETERS
     The following named parameters may be passed to `new' or `configure':
 
@@ -63,6 +99,13 @@ PARAMETERS
             internally by the object and not sent to the server until
             responses are received. If not supplied, will default to 4. Give
             0 to disable the limit entirely.
+
+    max_connections_per_host => INT
+            Optional. Controls the maximum number of connections per
+            hostname/server port pair, before requests will be queued
+            awaiting one to be free. If not supplied, will default to 1.
+            Give 0 to disable the limit entirely. See also the Connection
+            Pooling section documented above.
 
     timeout => NUM
             Optional. How long in seconds to wait before giving up on a
@@ -102,6 +145,13 @@ PARAMETERS
              $on_error->( "$code $message", $response, $request )
 
              ( $code_message, $response, $request ) = $f->failure
+
+    read_len => INT
+    write_len => INT
+            Optional. Used to set the reading and writing buffer lengths on
+            the underlying `IO::Async::Stream' objects that represent
+            connections to the server. If not define, a default of 64 KiB
+            will be used.
 
 METHODS
   $http->do_request( %args )

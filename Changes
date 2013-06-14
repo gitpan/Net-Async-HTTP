@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.22    CHANGES:
+         * Allow more control over per-host concurrency; either a pool with a
+           limit, or boundless growth of concurrency
+
 0.21    CHANGES:
          * Optional mode in which 4xx and 5xx HTTP errors are turned into
            callback errors or Future failures

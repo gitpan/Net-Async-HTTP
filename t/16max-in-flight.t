@@ -48,7 +48,8 @@ $http->do_request(
 wait_for { $peersock };
 
 # CHEATING
-my $conn = $http->{connections}->{"$host:80"} or die "Unable to find connection object";
+my $conn = $http->{connections}->{"$host:80"}->[0] or die "Unable to find connection object";
+ref $conn eq "Net::Async::HTTP::Protocol" or die "Unable to find connection object";
 
 my $request_stream = "";
 wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
@@ -57,7 +58,7 @@ ok( $request_stream =~ m[^GET /0 HTTP/1\.1$CRLF.*?$CRLF$CRLF$]s, 'Request stream
 $request_stream = "";
 
 # CHEATING
-is( scalar @{ $conn->{on_ready_queue} }, 3, '3 requests still queued' );
+is( scalar @{ $conn->{ready_queue} }, 3, '3 requests still queued' );
 
 $peersock->print( "HTTP/1.1 200 OK$CRLF" .
                   "Content-Length: 0$CRLF" .
@@ -73,7 +74,7 @@ ok( $request_stream =~ m[^GET /1 HTTP/1\.1$CRLF.*?${CRLF}${CRLF}GET /2 HTTP/1\.1
 $request_stream = "";
 
 # CHEATING
-is( scalar @{ $conn->{on_ready_queue} }, 1, '1 request still queued' );
+is( scalar @{ $conn->{ready_queue} }, 1, '1 request still queued' );
 
 $peersock->print( "HTTP/1.1 200 OK$CRLF" .
                   "Content-Length: 1$CRLF" .
