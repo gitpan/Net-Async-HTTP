@@ -17,6 +17,7 @@ testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
    user_agent => "", # Don't put one in request headers
+   pipeline => 0, # Disable pipelining or we'll break the tests
 );
 
 $loop->add( $http );
@@ -56,6 +57,7 @@ foreach my $max ( 1, 2, 0 ) {
    # Wait for all the pending requests to be written
    my @buffers;
    wait_for_stream { ($buffers[$_]||"") =~ m/$CRLF$CRLF/ } $peersocks[$_] => $buffers[$_] for 0 .. $#peersocks;
+   $_ = "" for @buffers;
 
    # Write responses for all
    $_->syswrite( "HTTP/1.1 200 OK$CRLF" .
@@ -66,19 +68,30 @@ foreach my $max ( 1, 2, 0 ) {
    if( $max == 1 ) {
       # The other two requests come over the same initial socket
       wait_for_stream { ($buffers[0]||"") =~ m/$CRLF$CRLF/ } $peersocks[0] => $buffers[0];
+      $_ = "" for @buffers;
       $peersocks[0]->syswrite( "HTTP/1.1 200 OK$CRLF" .
                                "Content-Length: 0$CRLF" . $CRLF );
       wait_for { $done[1] };
 
       wait_for_stream { ($buffers[0]||"") =~ m/$CRLF$CRLF/ } $peersocks[0] => $buffers[0];
+      $_ = "" for @buffers;
       $peersocks[0]->syswrite( "HTTP/1.1 200 OK$CRLF" .
                                "Content-Length: 0$CRLF" . $CRLF );
    }
    elsif( $max == 2 ) {
-      # The third request will come over $peersock[0] again
-      wait_for_stream { ($buffers[0]||"") =~ m/$CRLF$CRLF/ } $peersocks[0] => $buffers[0];
-      $peersocks[0]->syswrite( "HTTP/1.1 200 OK$CRLF" .
-                               "Content-Length: 0$CRLF" . $CRLF );
+      # The third request will come over one of these $peersocks again, but we don't know which
+      my $peersock;
+      {
+         $loop->watch_io( handle => $peersocks[0], on_read_ready => sub { $peersock = $peersocks[0] } );
+         $loop->watch_io( handle => $peersocks[1], on_read_ready => sub { $peersock = $peersocks[1] } );
+         wait_for { defined $peersock };
+         $loop->unwatch_io( handle => $_, on_read_ready => 1 ) for @peersocks;
+      }
+
+      wait_for_stream { ($buffers[0]||"") =~ m/$CRLF$CRLF/ } $peersock => $buffers[0];
+      $_ = "" for @buffers;
+      $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                           "Content-Length: 0$CRLF" . $CRLF );
    }
 
    wait_for { $done[0] && $done[1] && $done[2] };

@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.23    BUGFIXES:
+         * Fix t/14conn-max.t failures - disable pipelining, wait for correct
+           peersock connection to become ready (it may not be [0])
+
 0.22    CHANGES:
          * Allow more control over per-host concurrency; either a pool with a
            limit, or boundless growth of concurrency

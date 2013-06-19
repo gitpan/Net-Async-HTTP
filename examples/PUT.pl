@@ -115,15 +115,11 @@ $ua->do_request(
 
       close $fh or die $!;
       print $response->as_string;
-      $loop->loop_stop;
    },
 
    on_error => sub {
       my ( $message ) = @_;
 
       print STDERR "Failed - $message\n";
-      $loop->loop_stop;
    }
-);
-
-$loop->loop_forever;
+)->get;
