@@ -1,5 +1,10 @@
 Revision history for Net-Async-HTTP
 
+0.24    CHANGES:
+         * Optionally set IP_TOS field in sockets
+         * Remember to pass 'SSL' parameter around for requests on 'https'
+           scheme
+
 0.23    BUGFIXES:
          * Fix t/14conn-max.t failures - disable pipelining, wait for correct
            peersock connection to become ready (it may not be [0])

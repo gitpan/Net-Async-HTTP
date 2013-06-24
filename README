@@ -153,6 +153,12 @@ PARAMETERS
             connections to the server. If not define, a default of 64 KiB
             will be used.
 
+    ip_tos => INT or STRING
+            Optional. Used to set the `IP_TOS' socket option on client
+            sockets. If given, should either be a `IPTOS_*' constant, or one
+            of the string names `lowdelay', `throughput', `reliability' or
+            `mincost'. If undefined or left absent, no option will be set.
+
 METHODS
   $http->do_request( %args )
     Send an HTTP request to a server, and set up the callbacks to receive a
@@ -327,6 +333,13 @@ EXAMPLES
 SEE ALSO
     *   http://tools.ietf.org/html/rfc2616 - Hypertext Transfer Protocol --
         HTTP/1.1
+
+SPONSORS
+    Parts of this code were paid for by
+
+    * Socialflow http://www.socialflow.com
+
+    * Shadowcat Systems http://www.shadow.cat
 
 AUTHOR
     Paul Evans <leonerd@leonerd.org.uk>

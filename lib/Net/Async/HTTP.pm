@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.23';
+our $VERSION = '0.24';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -27,7 +27,22 @@ use IO::Async::Loop 0.31; # for ->connect( extensions )
 
 use Future::Utils qw( repeat );
 
-use Socket qw( SOCK_STREAM );
+use Socket qw( SOCK_STREAM IPPROTO_IP IP_TOS );
+BEGIN {
+   if( $Socket::VERSION >= '2.010' ) {
+      Socket->import(qw( IPTOS_LOWDELAY IPTOS_THROUGHPUT IPTOS_RELIABILITY IPTOS_MINCOST ));
+   }
+   else {
+      # These are portable constants, set in RFC 1349
+      require constant;
+      constant->import({
+         IPTOS_LOWDELAY    => 0x10,
+         IPTOS_THROUGHPUT  => 0x08,
+         IPTOS_RELIABILITY => 0x04,
+         IPTOS_MINCOST     => 0x02,
+      });
+   }
+}
 
 use constant HTTP_PORT  => 80;
 use constant HTTPS_PORT => 443;
@@ -221,6 +236,13 @@ Optional. Used to set the reading and writing buffer lengths on the underlying
 C<IO::Async::Stream> objects that represent connections to the server. If not
 define, a default of 64 KiB will be used.
 
+=item ip_tos => INT or STRING
+
+Optional. Used to set the C<IP_TOS> socket option on client sockets. If given,
+should either be a C<IPTOS_*> constant, or one of the string names
+C<lowdelay>, C<throughput>, C<reliability> or C<mincost>. If undefined or left
+absent, no option will be set.
+
 =back
 
 =cut
@@ -235,6 +257,16 @@ sub configure
       local_addrs local_addr fail_on_error read_len write_len ))
    {
       $self->{$_} = delete $params{$_} if exists $params{$_};
+   }
+
+   if( exists $params{ip_tos} ) {
+      # TODO: This conversion should live in IO::Async somewhere
+      my $ip_tos = delete $params{ip_tos};
+      $ip_tos = IPTOS_LOWDELAY    if defined $ip_tos and $ip_tos eq "lowdelay";
+      $ip_tos = IPTOS_THROUGHPUT  if defined $ip_tos and $ip_tos eq "throughput";
+      $ip_tos = IPTOS_RELIABILITY if defined $ip_tos and $ip_tos eq "reliability";
+      $ip_tos = IPTOS_MINCOST     if defined $ip_tos and $ip_tos eq "mincost";
+      $self->{ip_tos} = $ip_tos;
    }
 
    $self->SUPER::configure( %params );
@@ -284,6 +316,8 @@ sub connect_connection
             read_len  => $self->{read_len},
             write_len => $self->{write_len},
          );
+
+         $stream->read_handle->setsockopt( IPPROTO_IP, IP_TOS, $self->{ip_tos} ) if defined $self->{ip_tos};
       },
 
       on_resolve_error => sub {
@@ -604,6 +638,7 @@ sub _do_request
       return $reqf = $self->_do_one_request(
          host => $host,
          port => $port,
+         SSL  => $ssl,
          %args,
          on_header => $self->_capture_weakself( sub {
             my $self = shift;
@@ -720,7 +755,6 @@ sub _make_request_for_uri
 
    $args{host} = $uri->host;
    $args{port} = $uri->port;
-   $args{SSL}  = ( $uri->scheme eq "https" );
 
    my $request;
 
@@ -857,6 +891,22 @@ once, by using the L<Future::Utils> C<fmap_void> utility
 =item *
 
 L<http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol -- HTTP/1.1
+
+=back
+
+=head1 SPONSORS
+
+Parts of this code were paid for by
+
+=over 2
+
+=item *
+
+Socialflow L<http://www.socialflow.com>
+
+=item *
+
+Shadowcat Systems L<http://www.shadow.cat>
 
 =back
 
