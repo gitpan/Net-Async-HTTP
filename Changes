@@ -1,5 +1,10 @@
 Revision history for Net-Async-HTTP
 
+0.25    BUGFIXES:
+         * Defend against ->setsockopt detecting SvPOK() of string values
+         * Test for both "Connection closed" and "Connection closed while
+           awaiting header" as OSes differ in behaviour
+
 0.24    CHANGES:
          * Optionally set IP_TOS field in sockets
          * Remember to pass 'SSL' parameter around for requests on 'https'

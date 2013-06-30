@@ -60,6 +60,8 @@ wait_for { $resp[0] };
 
 wait_for { $err[0] };
 
-is( $err[0], "Connection closed", 'Queued request gets connection closed error' );
+# Not sure which error will happen
+like( $err[0], qr/^Connection closed($| while awaiting header)/,
+   'Queued request gets connection closed error' );
 
 done_testing;
