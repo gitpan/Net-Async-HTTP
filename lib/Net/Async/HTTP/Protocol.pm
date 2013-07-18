@@ -8,11 +8,12 @@ package Net::Async::HTTP::Protocol;
 use strict;
 use warnings;
 
-our $VERSION = '0.25';
+our $VERSION = '0.26';
 
 use Carp;
 
 use base qw( IO::Async::Protocol::Stream );
+use IO::Async::Timer::Countdown;
 
 use HTTP::Response;
 
@@ -199,8 +200,33 @@ sub request
 
    my $f = $self->loop->new_future;
 
+   my $stall_timer;
+   my $stall_reason;
+   if( $args{stall_timeout} ) {
+      $stall_timer = IO::Async::Timer::Countdown->new(
+         delay => $args{stall_timeout},
+         on_expire => sub {
+            my $self = shift;
+
+            $self->parent->close;
+
+            $f->fail( "Stalled while $stall_reason" );
+         }
+      );
+      $self->add_child( $stall_timer );
+      # Don't start it yet
+
+      $f->on_ready( sub { $self->remove_child( $stall_timer ) } );
+      $f->on_cancel( sub { $self->remove_child( $stall_timer ) } );
+   }
+
    my $on_read = sub {
       my ( $self, $buffref, $closed ) = @_;
+
+      if( $stall_timer ) {
+         $stall_reason = "receiving response header";
+         $stall_timer->reset;
+      }
 
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {
          if( $closed ) {
@@ -272,6 +298,7 @@ sub request
 
          my $chunk_length;
 
+         $stall_reason = "receiving body chunks";
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
@@ -339,6 +366,7 @@ sub request
             return undef; # Finished
          }
 
+         $stall_reason = "receiving body";
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
@@ -367,6 +395,7 @@ sub request
       else {
          $self->debug_printf( "BODY until EOF" );
 
+         $stall_reason = "receiving body until EOF";
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
@@ -408,11 +437,19 @@ sub request
    my @headers = ( "$method $path $protocol" );
    $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
 
+   # TODO: stall_timeout should also do sometihng during write, but that's
+   #   hard to arrange without support in IO::Async::Stream.
+
    $self->write( join( $CRLF, @headers ) .
                  $CRLF . $CRLF .
                  $req->content );
 
    $self->write( $request_body ) if $request_body and !$expect_continue;
+
+   $self->write( "", on_flush => sub {
+      $stall_timer->start;
+      $stall_reason = "waiting for response";
+   }) if $stall_timer;
 
    $self->{requests_in_flight}++;
 

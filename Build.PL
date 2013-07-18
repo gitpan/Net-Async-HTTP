@@ -14,6 +14,7 @@ my $build = Module::Build->new(
       'IO::Async::Loop' => '0.56',
       'IO::Async::Protocol::Stream' => '0.58',
       'IO::Async::Stream' => 0,
+      'IO::Async::Timer::Countdown' => 0,
       'URI' => 0,
    },
    build_requires => {

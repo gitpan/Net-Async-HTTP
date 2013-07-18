@@ -9,8 +9,9 @@ use IO::Async::Loop;
 
 use IO::Async::Stream;
 
-unless( eval { require Net::Async::HTTP::Server } ) {
-   plan skip_all => "Net::Async::HTTP::Server is not available";
+unless( eval { require Net::Async::HTTP::Server and
+               Net::Async::HTTP::Server->VERSION( '0.03' ) } ) {
+   plan skip_all => "Net::Async::HTTP::Server 0.03 is not available";
 }
 unless( eval { require Net::Async::HTTP } ) {
    plan skip_all => "Net::Async::HTTP is not available";

@@ -1,5 +1,12 @@
 Revision history for Net-Async-HTTP
 
+0.26    CHANGES:
+         * Added 'stall_timeout', at least for read operations
+
+        BUGFIXES:
+         * Fix NaHTTP+NaHTTP::Server unit tests for minimum version
+           requirements
+
 0.25    BUGFIXES:
          * Defend against ->setsockopt detecting SvPOK() of string values
          * Test for both "Connection closed" and "Connection closed while

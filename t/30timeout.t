@@ -40,7 +40,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    my $future = $http->do_request(
       uri => URI->new( "http://my.server/doc" ),
 
-      timeout => 1, # Really quick for testing
+      timeout => 0.1, # Really quick for testing
 
       on_response => sub { die "Test died early - got a response but shouldn't have" },
       on_error    => sub { $errcount++; $error = $_[0] },
@@ -66,7 +66,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    my $future = $http->do_request(
       uri => URI->new( "http://my.server/redir" ),
 
-      timeout => 1, # Really quick for testing
+      timeout => 0.1, # Really quick for testing
 
       on_response => sub { die "Test died early - got a response but shouldn't have" },
       on_error    => sub { $errcount++; $error = $_[0] },
@@ -99,7 +99,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    $http->do_request(
       uri => URI->new( "http://my.server/first" ),
 
-      timeout => 1, # Really quick for testing
+      timeout => 0.1, # Really quick for testing
 
       on_response => sub { die "Test died early - got a response but shouldn't have" },
       on_error    => sub { $errcount++; $error = $_[0] },
@@ -111,7 +111,7 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    $http->do_request(
       uri => URI->new( "http://my.server/second" ),
 
-      timeout => 3,
+      timeout => 0.3,
 
       on_response => sub { die "Test died early - got a response but shouldn't have" },
       on_error    => sub { $errcount2++; $error2 = $_[0] },
@@ -124,6 +124,58 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    wait_for { defined $error2 };
    is( $error2, "Timed out", 'Received timeout error from pipeline(2)' );
    is( $errcount2, 1, 'on_error invoked once from pipeline(2)' );
+}
+
+# Stall during header read
+{
+   my $future = $http->do_request(
+      uri => URI->new( "http://stalling.server/header" ),
+
+      stall_timeout => 0.1,
+   );
+
+   # Don't write anything
+
+   wait_for { $future->is_ready };
+   is( scalar $future->failure, "Stalled while waiting for response", '$future->failure' );
+}
+
+# Stall during header read
+{
+   my $future = $http->do_request(
+      uri => URI->new( "http://stalling.server/read" ),
+
+      stall_timeout => 0.1,
+   );
+
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                        "Content-Length: 100$CRLF" ); # unfinished
+
+   wait_for { $future->is_ready };
+   is( scalar $future->failure, "Stalled while receiving response header", '$future->failure' );
+}
+
+# Stall during body read
+{
+   my $future = $http->do_request(
+      uri => URI->new( "http://stalling.server/read" ),
+
+      stall_timeout => 0.1,
+   );
+
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( "HTTP/1.1 200 OK$CRLF" .
+                        "Content-Length: 100$CRLF" .
+                        $CRLF );
+   $peersock->syswrite( "some of the content" ); # unfinished
+
+   wait_for { $future->is_ready };
+   is( scalar $future->failure, "Stalled while receiving body", '$future->failure' );
 }
 
 $loop->remove( $http );

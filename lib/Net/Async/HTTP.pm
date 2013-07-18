@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.25';
+our $VERSION = '0.26';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -188,6 +188,13 @@ L</Connection Pooling> section documented above.
 Optional. How long in seconds to wait before giving up on a request. If not
 supplied then no default will be applied, and no timeout will take place.
 
+=item stall_timeout => NUM
+
+Optional. How long in seconds to wait after each successful chunk of data is
+read from a socket, before giving up on a request. This may be more useful
+than C<timeout> on large-file operations, as it will not time out provided
+that regular progress is still being made.
+
 =item proxy_host => STRING
 
 =item proxy_port => INT
@@ -253,8 +260,9 @@ sub configure
    my %params = @_;
 
    foreach (qw( user_agent max_redirects max_in_flight max_connections_per_host
-      timeout proxy_host proxy_port cookie_jar pipeline local_host local_port
-      local_addrs local_addr fail_on_error read_len write_len ))
+      timeout stall_timeout proxy_host proxy_port cookie_jar pipeline
+      local_host local_port local_addrs local_addr fail_on_error
+      read_len write_len ))
    {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
@@ -538,9 +546,10 @@ default to the value given in the constructor.
 
 =item timeout => NUM
 
-Optional. Specifies a timeout in seconds, after which to give up on the
-request and fail it with an error. If this happens, the error message will be
-C<Timed out>.
+=item stall_timeout => NUM
+
+Optional. Overrides the object's configured timeout values for this one
+request. If not specified, will use the configured defaults.
 
 =back
 
@@ -561,6 +570,8 @@ sub _do_one_request
    my $port    = delete $args{port};
    my $request = delete $args{request};
 
+   my $stall_timeout = $args{stall_timeout} // $self->{stall_timeout};
+
    $self->prepare_request( $request );
 
    return $self->get_connection(
@@ -573,6 +584,7 @@ sub _do_one_request
 
       return $conn->request(
          request => $request,
+         stall_timeout => $stall_timeout,
          %args,
       );
    } );

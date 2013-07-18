@@ -112,6 +112,13 @@ PARAMETERS
             request. If not supplied then no default will be applied, and no
             timeout will take place.
 
+    stall_timeout => NUM
+            Optional. How long in seconds to wait after each successful
+            chunk of data is read from a socket, before giving up on a
+            request. This may be more useful than `timeout' on large-file
+            operations, as it will not time out provided that regular
+            progress is still being made.
+
     proxy_host => STRING
     proxy_port => INT
             Optional. Default values to apply to each `request' method.
@@ -279,9 +286,10 @@ METHODS
             supplied, will default to the value given in the constructor.
 
     timeout => NUM
-            Optional. Specifies a timeout in seconds, after which to give up
-            on the request and fail it with an error. If this happens, the
-            error message will be `Timed out'.
+    stall_timeout => NUM
+            Optional. Overrides the object's configured timeout values for
+            this one request. If not specified, will use the configured
+            defaults.
 
   $future = $http->do_request( %args )
     This method also returns a Future, which will eventually yield the
