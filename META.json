@@ -40,11 +40,11 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.26"
+         "version" : "0.27"
       },
       "Net::Async::HTTP::Protocol" : {
          "file" : "lib/Net/Async/HTTP/Protocol.pm",
-         "version" : "0.26"
+         "version" : "0.27"
       }
    },
    "release_status" : "stable",
@@ -53,5 +53,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.26"
+   "version" : "0.27"
 }

@@ -1,5 +1,8 @@
 Revision history for Net-Async-HTTP
 
+0.27    BUGFIXES:
+         * Ensure that $f->cancel on a request Future actually works properly
+
 0.26    CHANGES:
          * Added 'stall_timeout', at least for read operations
 

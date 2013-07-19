@@ -111,4 +111,57 @@ $loop->add( $http );
    is( $response->code, 200, '$response->code for uri' );
 }
 
+# Cancellation
+{
+   my $peersock;
+   no warnings 'redefine';
+   local *Net::Async::HTTP::Protocol::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $peersock->blocking(0);
+
+      $self->IO::Async::Protocol::connect(
+         transport => IO::Async::Stream->new( handle => $selfsock )
+      );
+   };
+
+   my $f1 = $http->do_request(
+      method  => "GET",
+      uri     => URI->new( "http://host2/some/path" ),
+   );
+
+   wait_for { $peersock };
+
+   $f1->cancel;
+
+   wait_for { my $ret = sysread($peersock, my $buffer, 1); defined $ret and $ret == 0 };
+   ok( 1, '$peersock closed' );
+
+   undef $peersock;
+
+   my $f2 = $http->do_request(
+      method  => "GET",
+      uri     => URI->new( "http://host2/some/path" ),
+   );
+
+   wait_for { $peersock };
+
+   # Wait for the client to send its request
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( join( $CRLF,
+      "HTTP/1.1 200 OK",
+      "Content-Type: text/plain",
+      "Content-Length: 12",
+      "" ) . $CRLF .
+      "Hello world!"
+   );
+
+   wait_for { $f2->is_ready };
+   $f2->get;
+}
+
 done_testing;
