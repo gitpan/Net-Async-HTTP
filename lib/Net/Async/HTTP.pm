@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.27';
+our $VERSION = '0.27_001';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -17,15 +17,15 @@ our $DEFAULT_MAX_IN_FLIGHT = 4;
 
 use Carp;
 
-use Net::Async::HTTP::Protocol;
+use Net::Async::HTTP::Connection;
 
 use HTTP::Request;
 use HTTP::Request::Common qw();
 
-use IO::Async::Stream;
-use IO::Async::Loop 0.31; # for ->connect( extensions )
+use IO::Async::Stream 0.59;
+use IO::Async::Loop 0.59; # ->connect( handle ) ==> $stream
 
-use Future::Utils qw( repeat );
+use Future::Utils 0.16 qw( repeat );
 
 use Socket qw( SOCK_STREAM IPPROTO_IP IP_TOS );
 BEGIN {
@@ -303,44 +303,24 @@ sub connect_connection
 
    if( $args{SSL} ) {
       require IO::Async::SSL;
-      IO::Async::SSL->VERSION( 0.04 );
+      IO::Async::SSL->VERSION( '0.12' ); # 0.12 has ->connect(handle) bugfix
 
       push @{ $args{extensions} }, "SSL";
-
-      $args{on_ssl_error} = sub {
-         $on_error->( $conn, "$host:$port SSL error [$_[0]]" );
-      };
    }
 
    $conn->connect(
       host     => $host,
       service  => $port,
-
-      on_connected => sub {
-         my $conn = shift;
-         my $stream = $conn->transport;
-
-         $stream->configure(
-            read_len  => $self->{read_len},
-            write_len => $self->{write_len},
-         );
-
-         # Defend against ->setsockopt doing silly things like detecting SvPOK()
-         $stream->read_handle->setsockopt( IPPROTO_IP, IP_TOS, $self->{ip_tos}+0 ) if defined $self->{ip_tos};
-      },
-
-      on_resolve_error => sub {
-         $on_error->( $conn, "$host:$port not resolvable [$_[0]]" );
-      },
-
-      on_connect_error => sub {
-         $on_error->( $conn, "$host:$port not contactable [$_[-1]]" );
-      },
+      ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
 
       %args,
-
-      ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
-   );
+   )->on_done( sub {
+      my ( $stream ) = @_;
+      # Defend against ->setsockopt doing silly things like detecting SvPOK()
+      $stream->read_handle->setsockopt( IPPROTO_IP, IP_TOS, $self->{ip_tos}+0 ) if defined $self->{ip_tos};
+   })->on_fail( sub {
+      $on_error->( $conn, "$host:$port - $_[0] failed [$_[-1]]" );
+   });
 }
 
 sub get_connection
@@ -361,17 +341,20 @@ sub get_connection
 
    # Have a look to see if there are any idle connected ones first
    foreach my $conn ( @$conns ) {
-      $conn->is_idle and $conn->transport and return $f->done( $conn );
+      $conn->is_idle and $conn->read_handle and return $f->done( $conn );
    }
 
    push @$ready_queue, $f unless $args{future};
 
    if( !$self->{max_connections_per_host} or @$conns < $self->{max_connections_per_host} ) {
-      my $conn = Net::Async::HTTP::Protocol->new(
+      my $conn = Net::Async::HTTP::Connection->new(
          notifier_name => "$host:$port",
          max_in_flight => $self->{max_in_flight},
          pipeline      => $self->{pipeline},
          ready_queue   => $ready_queue,
+         read_len      => $self->{read_len},
+         write_len     => $self->{write_len},
+
          on_closed => sub {
             my $conn = shift;
 
@@ -671,8 +654,7 @@ sub _do_request
       my $f = shift;
       return 0 if $f->failure or $f->is_cancelled;
       return $response->is_redirect && $redirects--;
-   },
-   return => $self->loop->new_future );
+   } );
 
    if( $self->{fail_on_error} ) {
       $future = $future->and_then( sub {

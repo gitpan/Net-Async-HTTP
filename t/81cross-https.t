@@ -16,7 +16,8 @@ unless( eval { require Net::Async::HTTP::Server and
 unless( eval { require Net::Async::HTTP } ) {
    plan skip_all => "Net::Async::HTTP is not available";
 }
-unless( eval { require IO::Async::SSL } ) {
+unless( eval { require IO::Async::SSL and
+               IO::Async::SSL->VERSION( '0.12' ) } ) {
    plan skip_all => "IO::Async::SSL is not available";
 }
 

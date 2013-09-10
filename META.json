@@ -4,7 +4,7 @@
       "Paul Evans <leonerd@leonerd.org.uk>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.4005, CPAN::Meta::Converter version 2.120921",
+   "generated_by" : "Module::Build version 0.4007, CPAN::Meta::Converter version 2.132140",
    "license" : [
       "perl_5"
    ],
@@ -25,13 +25,12 @@
       "runtime" : {
          "requires" : {
             "Future" : "0.13",
-            "Future::Utils" : "0",
+            "Future::Utils" : "0.16",
             "HTTP::Request" : "0",
             "HTTP::Request::Common" : "0",
             "HTTP::Response" : "0",
-            "IO::Async::Loop" : "0.56",
-            "IO::Async::Protocol::Stream" : "0.58",
-            "IO::Async::Stream" : "0",
+            "IO::Async::Loop" : "0.59",
+            "IO::Async::Stream" : "0.59",
             "IO::Async::Timer::Countdown" : "0",
             "URI" : "0"
          }
@@ -40,18 +39,18 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.27"
+         "version" : "0.27_001"
       },
-      "Net::Async::HTTP::Protocol" : {
-         "file" : "lib/Net/Async/HTTP/Protocol.pm",
-         "version" : "0.27"
+      "Net::Async::HTTP::Connection" : {
+         "file" : "lib/Net/Async/HTTP/Connection.pm",
+         "version" : "0.27_001"
       }
    },
-   "release_status" : "stable",
+   "release_status" : "testing",
    "resources" : {
       "license" : [
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.27"
+   "version" : "0.27_001"
 }

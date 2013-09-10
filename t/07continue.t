@@ -21,7 +21,7 @@ $loop->add( $http );
 
 my $peersock;
 no warnings 'redefine';
-local *Net::Async::HTTP::Protocol::connect = sub {
+local *IO::Async::Handle::connect = sub {
    my $self = shift;
    my %args = @_;
 
@@ -29,10 +29,9 @@ local *Net::Async::HTTP::Protocol::connect = sub {
    $args{service} eq "80"    or die "Expected $args{service} eq 80";
 
    ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+   $self->set_handle( $selfsock );
 
-   $self->IO::Async::Protocol::connect(
-      transport => IO::Async::Stream->new( handle => $selfsock )
-   );
+   return Future->new->done( $self );
 };
 
 my $body_sent;

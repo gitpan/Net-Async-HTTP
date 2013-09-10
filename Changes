@@ -1,5 +1,14 @@
 Revision history for Net-Async-HTTP
 
+0.27_001   2013/09/10 01:29:15
+        [CHANGES]
+         * Rewrite back into being a subclass of IO::Async::Stream instead of
+           using IO::Async::Protocol::Stream
+
+        [BUGFIXES]
+         * Closed connections should drop the ready queue, so they don't
+           accidentally try to process a second request
+
 0.27    BUGFIXES:
          * Ensure that $f->cancel on a request Future actually works properly
 

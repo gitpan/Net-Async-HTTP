@@ -68,9 +68,9 @@ $loop->listen(
 
 wait_for { defined $port };
 
-my $code = \&IO::Async::Protocol::connect;
+my $code = \&IO::Async::Handle::connect;
 no warnings 'redefine';
-local *IO::Async::Protocol::connect = sub {
+local *IO::Async::Handle::connect = sub {
    my $self = shift;
    my %args = @_;
    $args{service} = $port if $args{service} eq 'http';

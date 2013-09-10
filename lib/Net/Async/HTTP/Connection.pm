@@ -3,16 +3,16 @@
 #
 #  (C) Paul Evans, 2008-2013 -- leonerd@leonerd.org.uk
 
-package Net::Async::HTTP::Protocol;
+package Net::Async::HTTP::Connection;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.27';
+our $VERSION = '0.27_001';
 
 use Carp;
 
-use base qw( IO::Async::Protocol::Stream );
+use base qw( IO::Async::Stream );
 use IO::Async::Timer::Countdown;
 
 use HTTP::Response;
@@ -30,7 +30,7 @@ use constant HTTP_MESSAGE_TRIMS_LWS => HTTP::Message->parse( "Name:   value  " )
 
 =head1 NAME
 
-C<Net::Async::HTTP::Protocol> - HTTP client protocol handler
+C<Net::Async::HTTP::Connection> - HTTP client protocol handler
 
 =head1 DESCRIPTION
 
@@ -42,6 +42,7 @@ internally by L<Net::Async::HTTP>. It is not intended for general use.
 sub _init
 {
    my $self = shift;
+   $self->SUPER::_init( @_ );
 
    $self->{requests_in_flight} = 0;
 }
@@ -61,6 +62,7 @@ sub configure
 
          $self->debug_printf( "CLOSED" );
 
+         undef $self->{ready_queue};
          $on_closed->( $self );
       };
    }
@@ -68,16 +70,6 @@ sub configure
    croak "max_in_flight parameter required, may be zero" unless defined $self->{max_in_flight};
 
    $self->SUPER::configure( %params );
-}
-
-sub setup_transport
-{
-   my $self = shift;
-   my ( $transport ) = @_;
-   $self->SUPER::setup_transport( $transport );
-
-   $self->debug_printf( "CONNECTED" );
-   $self->ready;
 }
 
 sub should_pipeline
@@ -95,7 +87,15 @@ sub connect
 
    $self->debug_printf( "CONNECT $args{host}:$args{service}" );
 
-   $self->SUPER::connect( %args );
+   defined wantarray or die "VOID ->connect";
+
+   $self->SUPER::connect(
+      socktype => "stream",
+      %args
+   )->on_done( sub {
+      $self->debug_printf( "CONNECTED" );
+      $self->ready;
+   });
 }
 
 sub ready
@@ -203,7 +203,7 @@ sub request
    # TODO: Cancelling a request Future shouldn't necessarily close the socket
    # if we haven't even started writing the request yet. But we can't know
    # that currently.
-   $f->on_cancel( sub { $self->transport->close_now } );
+   $f->on_cancel( sub { $self->close_now } );
 
    my $stall_timer;
    my $stall_reason;
@@ -213,7 +213,7 @@ sub request
          on_expire => sub {
             my $self = shift;
 
-            $self->parent->transport->close_now;
+            $self->parent->close_now;
 
             $f->fail( "Stalled while $stall_reason" );
          }

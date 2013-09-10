@@ -23,15 +23,14 @@ $loop->add( $http );
 {
    my $peersock;
    no warnings 'redefine';
-   local *Net::Async::HTTP::Protocol::connect = sub {
+   local *IO::Async::Handle::connect = sub {
       my $self = shift;
       my %args = @_;
 
       ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $self->set_handle( $selfsock );
 
-      $self->IO::Async::Protocol::connect(
-         transport => IO::Async::Stream->new( handle => $selfsock )
-      );
+      return Future->new->done( $self );
    };
 
    my $request = HTTP::Request->new(
@@ -71,15 +70,14 @@ $loop->add( $http );
 {
    my $peersock;
    no warnings 'redefine';
-   local *Net::Async::HTTP::Protocol::connect = sub {
+   local *IO::Async::Handle::connect = sub {
       my $self = shift;
       my %args = @_;
 
       ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $self->set_handle( $selfsock );
 
-      $self->IO::Async::Protocol::connect(
-         transport => IO::Async::Stream->new( handle => $selfsock )
-      );
+      return Future->new->done( $self );
    };
 
    my $future = $http->do_request(
@@ -115,16 +113,15 @@ $loop->add( $http );
 {
    my $peersock;
    no warnings 'redefine';
-   local *Net::Async::HTTP::Protocol::connect = sub {
+   local *IO::Async::Handle::connect = sub {
       my $self = shift;
       my %args = @_;
 
       ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $self->set_handle( $selfsock );
       $peersock->blocking(0);
 
-      $self->IO::Async::Protocol::connect(
-         transport => IO::Async::Stream->new( handle => $selfsock )
-      );
+      return Future->new->done( $self );
    };
 
    my $f1 = $http->do_request(

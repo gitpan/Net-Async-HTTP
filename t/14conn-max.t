@@ -25,15 +25,14 @@ $loop->add( $http );
 my @peersocks;
 
 no warnings 'redefine';
-local *Net::Async::HTTP::Protocol::connect = sub {
+local *IO::Async::Handle::connect = sub {
    my $self = shift;
 
-   my ( $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socketpair - $!";
-   $self->IO::Async::Protocol::connect(
-      transport => IO::Async::Stream->new( handle => $selfsock )
-   );
-
+   my ( $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+   $self->set_handle( $selfsock );
    push @peersocks, $peersock;
+
+   return Future->new->done( $self );
 };
 
 foreach my $max ( 1, 2, 0 ) {

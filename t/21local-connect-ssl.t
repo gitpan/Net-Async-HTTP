@@ -11,7 +11,7 @@ use Net::Async::HTTP;
 
 eval {
    require IO::Async::SSL;
-   IO::Async::SSL->VERSION( 0.04 );
+   IO::Async::SSL->VERSION( '0.12' );
 } or plan skip_all => "No IO::Async::SSL";
 
 my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
