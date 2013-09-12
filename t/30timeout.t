@@ -10,6 +10,8 @@ use IO::Async::Loop;
 
 use Net::Async::HTTP;
 
+use Errno qw( EAGAIN );
+
 my $CRLF = "\x0d\x0a"; # because \r\n isn't portable
 
 my $loop = IO::Async::Loop->new();
@@ -22,8 +24,9 @@ $loop->add( $http );
 my $peersock;
 
 no warnings 'redefine';
+my $latest_connection;
 local *IO::Async::Handle::connect = sub {
-   my $self = shift;
+   $latest_connection = my $self = shift;
 
    ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
    $self->set_handle( $selfsock );
@@ -124,6 +127,23 @@ local *IO::Async::Handle::connect = sub {
    is( $errcount2, 1, 'on_error invoked once from pipeline(2)' );
 }
 
+# Stall during write
+{
+   my $future = $http->do_request(
+      uri => URI->new( "http://stalling.server/write" ),
+
+      stall_timeout => 0.1,
+   );
+
+   # Much hackery for unit-testing purposes
+   $latest_connection->configure(
+      writer => sub { $! = EAGAIN; return undef },
+   );
+
+   wait_for { $future->is_ready };
+   is( scalar $future->failure, "Stalled while writing request", '$future->failure for stall during write' );
+}
+
 # Stall during header read
 {
    my $future = $http->do_request(
@@ -135,7 +155,7 @@ local *IO::Async::Handle::connect = sub {
    # Don't write anything
 
    wait_for { $future->is_ready };
-   is( scalar $future->failure, "Stalled while waiting for response", '$future->failure' );
+   is( scalar $future->failure, "Stalled while waiting for response", '$future->failure for stall during response header' );
 }
 
 # Stall during header read
@@ -153,7 +173,7 @@ local *IO::Async::Handle::connect = sub {
                         "Content-Length: 100$CRLF" ); # unfinished
 
    wait_for { $future->is_ready };
-   is( scalar $future->failure, "Stalled while receiving response header", '$future->failure' );
+   is( scalar $future->failure, "Stalled while receiving response header", '$future->failure for stall during response header' );
 }
 
 # Stall during body read
@@ -173,7 +193,7 @@ local *IO::Async::Handle::connect = sub {
    $peersock->syswrite( "some of the content" ); # unfinished
 
    wait_for { $future->is_ready };
-   is( scalar $future->failure, "Stalled while receiving body", '$future->failure' );
+   is( scalar $future->failure, "Stalled while receiving body", '$future->failure for stall during response body' );
 }
 
 $loop->remove( $http );

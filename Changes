@@ -1,5 +1,10 @@
 Revision history for Net-Async-HTTP
 
+0.27_002   2013/09/12 18:43:28
+        [CHANGES]
+         * IO::Async::Stream 0.59 allows stall timeout detection during writes
+           now as well
+
 0.27_001   2013/09/10 01:29:15
         [CHANGES]
          * Rewrite back into being a subclass of IO::Async::Stream instead of

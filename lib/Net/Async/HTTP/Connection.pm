@@ -8,11 +8,12 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.27_001';
+our $VERSION = '0.27_002';
 
 use Carp;
 
 use base qw( IO::Async::Stream );
+IO::Async::Stream->VERSION( '0.59' ); # ->write( ..., on_write )
 use IO::Async::Timer::Countdown;
 
 use HTTP::Response;
@@ -442,17 +443,20 @@ sub request
    my @headers = ( "$method $path $protocol" );
    $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
 
-   # TODO: stall_timeout should also do sometihng during write, but that's
-   #   hard to arrange without support in IO::Async::Stream.
+   $stall_timer->start if $stall_timer;
+   $stall_reason = "writing request";
+   my $on_write = $stall_timer ? sub { $stall_timer->reset } : undef;
 
    $self->write( join( $CRLF, @headers ) .
                  $CRLF . $CRLF .
-                 $req->content );
+                 $req->content,
+                 on_write => $on_write );
 
-   $self->write( $request_body ) if $request_body and !$expect_continue;
+   $self->write( $request_body,
+                 on_write => $on_write ) if $request_body and !$expect_continue;
 
    $self->write( "", on_flush => sub {
-      $stall_timer->start;
+      $stall_timer->reset;
       $stall_reason = "waiting for response";
    }) if $stall_timer;
 
