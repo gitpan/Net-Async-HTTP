@@ -61,7 +61,7 @@ sub do_test_req
       on_response => sub { $response = $_[0] },
       on_error    => sub { $error    = $_[0] },
    );
-   $future->on_fail( sub { $future->get } );
+   $future->on_fail( sub { $future->get } ) unless $args{expect_error};
 
    ok( defined $future, "\$future defined for $name" );
 
@@ -106,11 +106,6 @@ sub do_test_req
    # Wait for the server to finish its response
    wait_for { defined $response or defined $error };
 
-   identical( $response->request, $request, "\$response->request is \$request for $name" );
-
-   ok( $future->is_ready, "\$future is now ready after response given for $name" );
-   identical( scalar $future->get, $response, "\$future->get yields \$response for $name" );
-
    if( $args{expect_error} ) {
       ok( defined $error, "Expected error for $name" );
       return;
@@ -121,6 +116,11 @@ sub do_test_req
          diag( "Got error $error" );
       }
    }
+
+   identical( $response->request, $request, "\$response->request is \$request for $name" );
+
+   ok( $future->is_ready, "\$future is now ready after response given for $name" );
+   identical( scalar $future->get, $response, "\$future->get yields \$response for $name" );
 
    if( exists $args{expect_res_code} ) {
       is( $response->code, $args{expect_res_code}, "Result code for $name" );
@@ -331,6 +331,27 @@ do_test_req( "GET chunks LWS stripping",
       'Transfer-Encoding' => "chunked",
    },
    expect_res_content => "Hello, world!",
+);
+
+do_test_req( "GET chunks corrupted",
+   req => $req,
+   host => "somewhere",
+
+   expect_req_firstline => "GET /stream HTTP/1.1",
+   expect_req_headers => {
+      Host => "somewhere",
+   },
+
+   response => "HTTP/1.1 500 Internal Server Error$CRLF" . 
+               "Content-Length: 21$CRLF" .
+               "Content-Type: text/plain$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
+               "Transfer-Encoding: chunked$CRLF" .
+               $CRLF .
+               "Internal Server Error" . $CRLF, # no chunk header
+   close_after_response => 1,
+
+   expect_error => 1,
 );
 
 $req = HTTP::Request->new( GET => "/untileof", [ Host => "somewhere" ] );

@@ -1,18 +1,17 @@
 Revision history for Net-Async-HTTP
 
-0.27_002   2013/09/12 18:43:28
-        [CHANGES]
-         * IO::Async::Stream 0.59 allows stall timeout detection during writes
-           now as well
-
-0.27_001   2013/09/10 01:29:15
+0.28    2013/09/13 20:40:14
         [CHANGES]
          * Rewrite back into being a subclass of IO::Async::Stream instead of
            using IO::Async::Protocol::Stream
+         * IO::Async::Stream 0.59 allows stall timeout detection during writes
+           now as well
 
         [BUGFIXES]
          * Closed connections should drop the ready queue, so they don't
            accidentally try to process a second request
+         * Failure handling of corrupted chunk headers during chunked transfer
+           encoding
 
 0.27    BUGFIXES:
          * Ensure that $f->cancel on a request Future actually works properly

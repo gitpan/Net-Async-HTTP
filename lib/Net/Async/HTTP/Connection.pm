@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.27_002';
+our $VERSION = '0.28';
 
 use Carp;
 
@@ -308,8 +308,14 @@ sub request
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
-            if( !defined $chunk_length and $$buffref =~ s/^([A-Fa-f0-9]+).*?$CRLF// ) {
+            if( !defined $chunk_length ) {
                # Chunk header
+               unless( $$buffref =~ s/^([A-Fa-f0-9]+).*?$CRLF// ) {
+                  $f->fail( "Corrupted chunk header" ) unless $f->is_cancelled;
+                  $self->close_now;
+                  return 0;
+               }
+
                $chunk_length = hex( $1 );
                return 1 if $chunk_length;
 
