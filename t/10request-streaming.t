@@ -115,9 +115,7 @@ local *IO::Async::Handle::connect = sub {
    );
 }
 
-SKIP: {
-   skip "request_body from Future requires IO::Async::Stream >= 0.57", 2 unless $IO::Async::Stream::VERSION >= 0.57;
-
+{
    my $req = HTTP::Request->new( PUT => "/handler", [ Host => "somewhere" ]);
    $req->content_length( 15 );
 

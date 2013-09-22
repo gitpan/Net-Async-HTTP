@@ -1,5 +1,13 @@
 Revision history for Net-Async-HTTP
 
+0.29    2013/09/22 02:50:39
+        [CHANGES]
+         * Added 'on_body_write' callback
+         * Reordering of documentation to emphasise futures first
+
+        [BUGFIXES]
+         * Fix handling of chunk header when split across reads
+
 0.28    2013/09/13 20:40:14
         [CHANGES]
          * Rewrite back into being a subclass of IO::Async::Stream instead of

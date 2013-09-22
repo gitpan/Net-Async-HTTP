@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.28';
+our $VERSION = '0.29';
 
 use Carp;
 
@@ -184,7 +184,7 @@ sub request
    my $req = $args{request};
    ref $req and $req->isa( "HTTP::Request" ) or croak "Expected 'request' as a HTTP::Request reference";
 
-   $self->debug_printf( "REQUEST %s", $req->uri );
+   $self->debug_printf( "REQUEST %s %s", $req->method, $req->uri );
 
    my $request_body = $args{request_body};
    my $expect_continue = !!$args{expect_continue};
@@ -226,6 +226,16 @@ sub request
       $f->on_cancel( sub { $self->remove_child( $stall_timer ) } );
    }
 
+   my $on_body_write;
+   if( $stall_timer or $args{on_body_write} ) {
+      my $inner_on_body_write = $args{on_body_write};
+      my $written = 0;
+      $on_body_write = sub {
+         $stall_timer->reset if $stall_timer;
+         $inner_on_body_write->( $written += $_[1] ) if $inner_on_body_write;
+      };
+   }
+
    my $on_read = sub {
       my ( $self, $buffref, $closed ) = @_;
 
@@ -261,7 +271,8 @@ sub request
 
       if( $header->code =~ m/^1/ ) { # 1xx is not a final response
          $self->debug_printf( "HEADER [provisional] %s", $header->status_line );
-         $self->write( $request_body ) if $request_body and $expect_continue;
+         $self->write( $request_body,
+                       on_write => $on_body_write ) if $request_body and $expect_continue;
          return 1;
       }
 
@@ -308,9 +319,11 @@ sub request
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
-            if( !defined $chunk_length ) {
+            if( !defined $chunk_length and $$buffref =~ s/^(.*?)$CRLF// ) {
+               my $header = $1;
+
                # Chunk header
-               unless( $$buffref =~ s/^([A-Fa-f0-9]+).*?$CRLF// ) {
+               unless( $header =~ s/^([A-Fa-f0-9]+).*// ) {
                   $f->fail( "Corrupted chunk header" ) unless $f->is_cancelled;
                   $self->close_now;
                   return 0;
@@ -451,15 +464,17 @@ sub request
 
    $stall_timer->start if $stall_timer;
    $stall_reason = "writing request";
-   my $on_write = $stall_timer ? sub { $stall_timer->reset } : undef;
+
+   my $on_header_write = $stall_timer ? sub { $stall_timer->reset } : undef;
 
    $self->write( join( $CRLF, @headers ) .
-                 $CRLF . $CRLF .
-                 $req->content,
-                 on_write => $on_write );
+                 $CRLF . $CRLF,
+                 on_write => $on_header_write );
 
+   $self->write( $req->content,
+                 on_write => $on_body_write ) if length $req->content;
    $self->write( $request_body,
-                 on_write => $on_write ) if $request_body and !$expect_continue;
+                 on_write => $on_body_write ) if $request_body and !$expect_continue;
 
    $self->write( "", on_flush => sub {
       $stall_timer->reset;
