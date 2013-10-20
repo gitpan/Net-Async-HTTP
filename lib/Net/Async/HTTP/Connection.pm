@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.29';
+our $VERSION = '0.30';
 
 use Carp;
 
@@ -162,7 +162,7 @@ sub on_read
 sub on_write_eof
 {
    my $self = shift;
-   $self->error_all( "Connection closed" );
+   $self->error_all( "Connection closed", http => undef, undef );
 }
 
 sub error_all
@@ -216,7 +216,7 @@ sub request
 
             $self->parent->close_now;
 
-            $f->fail( "Stalled while $stall_reason" );
+            $f->fail( "Stalled while $stall_reason", http => undef, $req );
          }
       );
       $self->add_child( $stall_timer );
@@ -247,7 +247,7 @@ sub request
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {
          if( $closed ) {
             $self->debug_printf( "ERROR closed" );
-            $f->fail( "Connection closed while awaiting header" ) unless $f->is_cancelled;
+            $f->fail( "Connection closed while awaiting header", http => undef, $req ) unless $f->is_cancelled;
          }
          return 0;
       }
@@ -324,7 +324,7 @@ sub request
 
                # Chunk header
                unless( $header =~ s/^([A-Fa-f0-9]+).*// ) {
-                  $f->fail( "Corrupted chunk header" ) unless $f->is_cancelled;
+                  $f->fail( "Corrupted chunk header", http => undef, $req ) unless $f->is_cancelled;
                   $self->close_now;
                   return 0;
                }
@@ -340,7 +340,7 @@ sub request
 
                   if( $closed ) {
                      $self->debug_printf( "ERROR closed" );
-                     $f->fail( "Connection closed while awaiting chunk trailer" ) unless $f->is_cancelled;
+                     $f->fail( "Connection closed while awaiting chunk trailer", http => undef, $req ) unless $f->is_cancelled;
                   }
 
                   $$buffref =~ s/^(.*)$CRLF// or return 0;
@@ -365,7 +365,7 @@ sub request
 
                unless( $$buffref =~ s/^$CRLF// ) {
                   $self->debug_printf( "ERROR chunk without CRLF" );
-                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF" ) unless $f->is_cancelled;
+                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF", http => undef, $req ) unless $f->is_cancelled;
                   $self->close;
                }
 
@@ -376,7 +376,7 @@ sub request
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting chunk" ) unless $f->is_cancelled;
+               $f->fail( "Connection closed while awaiting chunk", http => undef, $req ) unless $f->is_cancelled;
             }
             return 0;
          };
@@ -412,7 +412,7 @@ sub request
 
             if( $closed ) {
                $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting body" ) unless $f->is_cancelled;
+               $f->fail( "Connection closed while awaiting body", http => undef, $req ) unless $f->is_cancelled;
             }
             return 0;
          };

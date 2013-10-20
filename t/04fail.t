@@ -107,13 +107,35 @@ local *IO::Async::Handle::connect = sub {
    wait_for { $future->is_ready };
 
    is( scalar $future->failure, "404 Not Found", '$future->failure for fail_on_error true' );
-   my ( undef, $response_f, $request_f ) = $future->failure;
+   my ( undef, undef, $response_f, $request_f ) = $future->failure;
 
    is( $response_f->code, 404, '$response_f->code for fail_on_error true' );
    is( $response_c->code, 404, '$response_c->code for fail_on_error true' );
 
    is( $request_f->uri, "http://host0/some/path", '$request_f->uri for fail_on_error true' );
    is( $request_c->uri, "http://host0/some/path", '$request_f->uri for fail_on_error true' );
+
+   # Now check that non-errors don't fail
+   $future = $http->do_request(
+      method => "GET",
+      uri    => URI->new( "http://host0/other/path" ),
+   );
+
+   $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( join( $CRLF,
+      "HTTP/1.1 200 OK",
+      "Content-Type: text/plain",
+      "Content-Length: 9",
+      "" ) . $CRLF .
+      "Here I am"
+   );
+
+   wait_for { $future->is_ready };
+   my $response = $future->get;
+
+   is( $response->code, 200, '$response->code for non-fail' );
 }
 
 done_testing;

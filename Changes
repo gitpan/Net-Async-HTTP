@@ -1,5 +1,15 @@
 Revision history for Net-Async-HTTP
 
+0.30    2013/10/20 02:08:01
+        [CHANGES]
+         * Use Future->new->fail to return failing immediate Futures
+         * Ensure Future failures all use standard IO::Async style of
+           ($message, NAME, ...)
+
+        [BUGFIXES]
+         * Ensure that fail_on_error doesn't cause non-error responses to fail
+           (RT88996)
+
 0.29    2013/09/22 02:50:39
         [CHANGES]
          * Added 'on_body_write' callback

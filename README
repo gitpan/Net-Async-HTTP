@@ -138,9 +138,9 @@ PARAMETERS
             fail, or the `on_error' callback to be invoked.
 
             The HTTP response and request objects will be passed as well as
-            the code and message.
+            the code and message, and the failure name will be `http'.
 
-             ( $code_message, $response, $request ) = $f->failure
+             ( $code_message, "http", $response, $request ) = $f->failure
 
              $on_error->( "$code $message", $response, $request )
 
@@ -158,6 +158,13 @@ PARAMETERS
             `mincost'. If undefined or left absent, no option will be set.
 
 METHODS
+    When returning a Future, the following methods all indicate HTTP-level
+    errors using the Future failure name of `http'. If the error relates to
+    a specific response it will be included. The original request is also
+    included.
+
+     $f->fail( $message, "http", $response, $request )
+
   $http->do_request( %args ) ==> $response
     Send an HTTP request to a server, returning a Future that will yield the
     response. The request may be represented by an HTTP::Request object, or

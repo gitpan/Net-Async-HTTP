@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.29';
+our $VERSION = '0.30';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -222,9 +222,9 @@ C<on_response> callback. When true, such an error response causes the future
 to fail, or the C<on_error> callback to be invoked.
 
 The HTTP response and request objects will be passed as well as the code and
-message.
+message, and the failure name will be C<http>.
 
- ( $code_message, $response, $request ) = $f->failure
+ ( $code_message, "http", $response, $request ) = $f->failure
 
  $on_error->( "$code $message", $response, $request )
 
@@ -279,6 +279,12 @@ sub configure
 }
 
 =head1 METHODS
+
+When returning a Future, the following methods all indicate HTTP-level errors
+using the Future failure name of C<http>. If the error relates to a specific
+response it will be included. The original request is also included.
+
+ $f->fail( $message, "http", $response, $request )
 
 =cut
 
@@ -615,12 +621,12 @@ sub _do_request
             $location = "http://$hostport" . $location;
          }
          else {
-            return $self->loop->new_future->fail( "Unrecognised Location: $location" );
+            return Future->new->fail( "Unrecognised Location: $location", http => $previous_response, $request );
          }
 
          my $loc_uri = URI->new( $location );
          unless( $loc_uri ) {
-            return $self->loop->new_future->fail( "Unable to parse '$location' as a URI" );
+            return Future->new->fail( "Unable to parse '$location' as a URI", http => $previous_response, $request );
          }
 
          $args{on_redirect}->( $previous_response, $location ) if $args{on_redirect};
@@ -673,10 +679,10 @@ sub _do_request
             my $message = $resp->message;
             $message =~ s/\r$//; # HTTP::Message bug
 
-            return Future->new->fail( "$code $message", $resp, $request );
+            return Future->new->fail( "$code $message", http => $resp, $request );
          }
 
-         return $resp;
+         return $f;
       });
    }
 
@@ -718,10 +724,11 @@ sub do_request
    my $future = $self->_do_request( %args );
 
    if( defined $timeout ) {
+      my $request = $args{req};
       $future = Future->wait_any(
          $future,
          $self->loop->timeout_future( after => $timeout )
-                    ->transform( fail => sub { "Timed out" } ),
+                    ->transform( fail => sub { "Timed out", http => undef, $request } ),
       );
    }
 
@@ -731,7 +738,10 @@ sub do_request
       $self->process_response( $response );
    } ) );
 
-   $future->on_fail( $args{on_error} ) if $args{on_error};
+   $future->on_fail( sub {
+      my ( $message, $name, @rest ) = @_;
+      $args{on_error}->( $message, @rest ) if $name eq "http"
+   }) if $args{on_error};
 
    # DODGY HACK:
    # In void context we'll lose reference on the ->wait_any Future, so the
