@@ -17,6 +17,7 @@ WriteMakefile
                    'IO::Async::Timer::Countdown' => 0,
                    'Test::Identity' => 0,
                    'Test::More' => '0.88',
+                   'Test::Refcount' => 0,
                    'URI' => 0
                  },
   'INSTALLDIRS' => 'site',

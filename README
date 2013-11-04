@@ -188,9 +188,10 @@ METHODS
 
     The following named arguments are used for `URI' requests:
 
-    uri => URI
-            A reference to a `URI' object. If the scheme is `https' then an
-            SSL connection will be used.
+    uri => URI or STRING
+            A reference to a `URI' object, or a plain string giving the
+            request URI. If the scheme is `https' then an SSL connection
+            will be used.
 
     method => STRING
             Optional. The HTTP method. If missing, `GET' is used.
@@ -305,8 +306,13 @@ METHODS
 
   $http->GET( $uri, %args ) ==> $response
   $http->HEAD( $uri, %args ) ==> $response
-    Convenient wrappers for using the `GET' or `HEAD' methods with a `URI'
-    object and few if any other arguments, returning a `Future'.
+  $http->POST( $uri, $content, %args ) ==> $response
+    Convenient wrappers for using the `GET', `HEAD' or `POST' methods with a
+    `URI' object and few if any other arguments, returning a `Future'.
+
+    Remember that `POST' with non-form data (as indicated by a plain scalar
+    instead of an `ARRAY' reference of form data name/value pairs) needs a
+    `content_type' key in `%args'.
 
 SUBCLASS METHODS
     The following methods are intended as points for subclasses to override,

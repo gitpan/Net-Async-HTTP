@@ -1,5 +1,18 @@
 Revision history for Net-Async-HTTP
 
+0.31    2013/11/04 18:04:30
+        [CHANGES]
+         * Allow a plain string URI, upgrading it to a URI object (RT89269)
+         * Added ->POST shortcut method, similar to ->GET and ->HEAD
+         * Extract HTTP basic auth. information from the URL in an
+           HTTP::Request (RT89775)
+
+        [BUGFIXES]
+         * Remember to keep resetting the stall timer when receiving body
+           content
+         * Fix awkward race between stall_timer and ->cancel
+         * Note dependency on Test::Refcount
+
 0.30    2013/10/20 02:08:01
         [CHANGES]
          * Use Future->new->fail to return failing immediate Futures

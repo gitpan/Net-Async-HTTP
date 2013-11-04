@@ -22,7 +22,7 @@ my $ua = Net::Async::HTTP->new(
 );
 $loop->add( $ua );
 
-$ua->GET( URI->new( $ARGV[0] ) )
+$ua->GET( $ARGV[0] )
    ->on_done( sub {
       my ( $response ) = @_;
 

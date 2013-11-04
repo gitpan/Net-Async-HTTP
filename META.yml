@@ -7,8 +7,9 @@ build_requires:
   IO::Async::Test: 0
   Test::Identity: 0
   Test::More: 0.88
+  Test::Refcount: 0
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132661'
+generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132830'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -17,10 +18,10 @@ name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: 0.30
+    version: 0.31
   Net::Async::HTTP::Connection:
     file: lib/Net/Async/HTTP/Connection.pm
-    version: 0.30
+    version: 0.31
 requires:
   Future: 0.17
   Future::Utils: 0.16
@@ -33,4 +34,4 @@ requires:
   URI: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.30
+version: 0.31

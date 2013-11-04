@@ -478,4 +478,25 @@ do_test_req( "request-implied host",
    expect_res_code => 200,
 );
 
+$req = HTTP::Request->new( GET => "http://user:pass\@somehost2/with/secret" );
+
+do_test_req( "request-implied authentication",
+   req => $req,
+   no_host => 1,
+
+   expect_req_firstline => "GET /with/secret HTTP/1.1",
+   expect_req_headers => {
+      Host => "somehost2",
+      Authorization => "Basic dXNlcjpwYXNz", # determined using 'wget'
+   },
+
+   response => "HTTP/1.1 200 OK$CRLF" .
+               "Content-Length: 4$CRLF" .
+               "Content-Type: text/plain$CRLF" .
+               $CRLF .
+               "Booo",
+
+   expect_res_code => 200,
+);
+
 done_testing;

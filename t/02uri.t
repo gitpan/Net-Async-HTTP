@@ -308,4 +308,20 @@ do_test_uri( "form POST",
    expect_res_content => "Done",
 );
 
+do_test_uri( "plain string URI",
+   method => "GET",
+   uri    => "http://host7/path",
+
+   expect_req_firstline => "GET /path HTTP/1.1",
+   expect_req_headers => {
+      Host => "host7",
+   },
+
+   response => "HTTP/1.1 200 OK$CRLF" .
+               "Content-Length: 0$CRLF" .
+               "$CRLF",
+
+   expect_res_code => 200,
+);
+
 done_testing;

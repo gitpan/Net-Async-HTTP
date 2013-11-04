@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -21,12 +21,14 @@ use Net::Async::HTTP::Connection;
 
 use HTTP::Request;
 use HTTP::Request::Common qw();
+use URI;
 
 use IO::Async::Stream 0.59;
 use IO::Async::Loop 0.59; # ->connect( handle ) ==> $stream
 
 use Future::Utils 0.16 qw( repeat );
 
+use Scalar::Util qw( blessed );
 use Socket qw( SOCK_STREAM IPPROTO_IP IP_TOS );
 BEGIN {
    if( $Socket::VERSION >= '2.010' ) {
@@ -419,10 +421,10 @@ The following named arguments are used for C<URI> requests:
 
 =over 8
 
-=item uri => URI
+=item uri => URI or STRING
 
-A reference to a C<URI> object. If the scheme is C<https> then an SSL
-connection will be used.
+A reference to a C<URI> object, or a plain string giving the request URI. If
+the scheme is C<https> then an SSL connection will be used.
 
 =item method => STRING
 
@@ -761,7 +763,12 @@ sub _make_request_for_uri
    my $self = shift;
    my ( $uri, %args ) = @_;
 
-   ref $uri and $uri->isa( "URI" ) or croak "Expected 'uri' as a URI reference";
+   if( !ref $uri ) {
+      $uri = URI->new( $uri );
+   }
+   elsif( blessed $uri and !$uri->isa( "URI" ) ) {
+      croak "Expected 'uri' as a URI reference";
+   }
 
    my $method = delete $args{method} || "GET";
 
@@ -810,21 +817,36 @@ sub _make_request_for_uri
 
 =head2 $http->HEAD( $uri, %args ) ==> $response
 
-Convenient wrappers for using the C<GET> or C<HEAD> methods with a C<URI>
-object and few if any other arguments, returning a C<Future>.
+=head2 $http->POST( $uri, $content, %args ) ==> $response
+
+Convenient wrappers for using the C<GET>, C<HEAD> or C<POST> methods with a
+C<URI> object and few if any other arguments, returning a C<Future>.
+
+Remember that C<POST> with non-form data (as indicated by a plain scalar
+instead of an C<ARRAY> reference of form data name/value pairs) needs a
+C<content_type> key in C<%args>.
 
 =cut
 
 sub GET
 {
    my $self = shift;
-   return $self->do_request( method => "GET", uri => @_ );
+   my ( $uri, @args ) = @_;
+   return $self->do_request( method => "GET", uri => $uri, @args );
 }
 
 sub HEAD
 {
    my $self = shift;
-   return $self->do_request( method => "HEAD", uri => @_ );
+   my ( $uri, @args ) = @_;
+   return $self->do_request( method => "HEAD", uri => $uri, @args );
+}
+
+sub POST
+{
+   my $self = shift;
+   my ( $uri, $content, @args ) = @_;
+   return $self->do_request( method => "POST", uri => $uri, content => $content, @args );
 }
 
 =head1 SUBCLASS METHODS

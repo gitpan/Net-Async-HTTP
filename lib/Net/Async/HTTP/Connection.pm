@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 use Carp;
 
@@ -222,8 +222,13 @@ sub request
       $self->add_child( $stall_timer );
       # Don't start it yet
 
-      $f->on_ready( sub { $self->remove_child( $stall_timer ) } );
-      $f->on_cancel( sub { $self->remove_child( $stall_timer ) } );
+      my $remove_timer = sub {
+         $self->remove_child( $stall_timer ) if $stall_timer;
+         undef $stall_timer;
+      };
+
+      $f->on_ready( $remove_timer );
+      $f->on_cancel( $remove_timer );
    }
 
    my $on_body_write;
@@ -253,6 +258,8 @@ sub request
       }
 
       my $header = HTTP::Response->parse( $1 );
+      # HTTP::Response doesn't strip the \rs from this
+      ( my $status_line = $header->status_line ) =~ s/\r$//;
 
       unless( HTTP_MESSAGE_TRIMS_LWS ) {
          my @headers;
@@ -270,7 +277,7 @@ sub request
       }
 
       if( $header->code =~ m/^1/ ) { # 1xx is not a final response
-         $self->debug_printf( "HEADER [provisional] %s", $header->status_line );
+         $self->debug_printf( "HEADER [provisional] %s", $status_line );
          $self->write( $request_body,
                        on_write => $on_body_write ) if $request_body and $expect_continue;
          return 1;
@@ -279,7 +286,7 @@ sub request
       $header->request( $req );
       $header->previous( $args{previous_response} ) if $args{previous_response};
 
-      $self->debug_printf( "HEADER %s", $header->status_line );
+      $self->debug_printf( "HEADER %s", $status_line );
 
       my $on_body_chunk = $on_header->( $header );
 
@@ -318,6 +325,8 @@ sub request
          $stall_reason = "receiving body chunks";
          return sub {
             my ( $self, $buffref, $closed ) = @_;
+
+            $stall_timer->reset if $stall_timer;
 
             if( !defined $chunk_length and $$buffref =~ s/^(.*?)$CRLF// ) {
                my $header = $1;
@@ -395,6 +404,8 @@ sub request
          return sub {
             my ( $self, $buffref, $closed ) = @_;
 
+            $stall_timer->reset if $stall_timer;
+
             # This will truncate it if the server provided too much
             my $content = substr( $$buffref, 0, $content_length, "" );
 
@@ -423,6 +434,8 @@ sub request
          $stall_reason = "receiving body until EOF";
          return sub {
             my ( $self, $buffref, $closed ) = @_;
+
+            $stall_timer->reset if $stall_timer;
 
             $on_body_chunk->( $$buffref );
             $$buffref = "";
@@ -455,7 +468,15 @@ sub request
       my $uri = $req->uri;
       $path = $uri->path_query;
       $path = "/$path" unless $path =~ m{^/};
-      $headers->init_header( Host => $uri->authority );
+      my $authority = $uri->authority;
+      if( defined $authority and
+          my ( $user, $pass, $host ) = $authority =~ m/^(.*?):(.*)@(.*)$/ ) {
+         $headers->init_header( Host => $host );
+         $headers->authorization_basic( $user, $pass );
+      }
+      else {
+         $headers->init_header( Host => $authority );
+      }
    }
 
    my $protocol = $req->protocol || "HTTP/1.1";
@@ -477,7 +498,7 @@ sub request
                  on_write => $on_body_write ) if $request_body and !$expect_continue;
 
    $self->write( "", on_flush => sub {
-      $stall_timer->reset;
+      $stall_timer->reset if $stall_timer; # test again in case it was cancelled in the meantime
       $stall_reason = "waiting for response";
    }) if $stall_timer;
 
