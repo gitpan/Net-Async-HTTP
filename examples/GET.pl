@@ -19,6 +19,7 @@ my $loop = IO::Async::Loop->new;
 my $ua = Net::Async::HTTP->new(
    local_host => $LOCAL_HOST,
    local_port => $LOCAL_PORT,
+   decode_content => 1,
 );
 $loop->add( $ua );
 

@@ -1,5 +1,15 @@
 Revision history for Net-Async-HTTP
 
+0.32    2013/11/19 14:09:18
+        [CHANGES]
+         * Optionally decode encoded content and set the Accept-Encoding
+           header of outbound requests. Currently defaults off, but may become
+           true in a later version.
+        
+        [BUGFIXES]
+         * Handle resolve/connect errors and pipeline queue flushing after
+           cancellation correctly
+
 0.31    2013/11/04 18:04:30
         [CHANGES]
          * Allow a plain string URI, upgrading it to a URI object (RT89269)

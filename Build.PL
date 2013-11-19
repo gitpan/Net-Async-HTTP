@@ -16,6 +16,9 @@ my $build = Module::Build->new(
       'IO::Async::Timer::Countdown' => 0,
       'URI' => 0,
    },
+   recommends => {
+      'Compress::Raw::Zlib' => 0,
+   },
    build_requires => {
       'HTTP::Cookies' => 0,
       'IO::Async::Test' => 0,

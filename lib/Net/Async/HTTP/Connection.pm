@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.31';
+our $VERSION = '0.32';
 
 use Carp;
 
@@ -53,7 +53,7 @@ sub configure
    my $self = shift;
    my %params = @_;
 
-   foreach (qw( pipeline max_in_flight ready_queue )) {
+   foreach (qw( pipeline max_in_flight ready_queue decode_content )) {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
 
@@ -107,11 +107,22 @@ sub ready
 
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
-      ( shift @$queue )->done( $self ) while @$queue && $self->should_pipeline;
+      while( @$queue && $self->should_pipeline ) {
+         my $f = shift @$queue;
+         next if $f->is_cancelled;
+
+         $f->done( $self );
+      }
    }
    elsif( @$queue and $self->is_idle ) {
       $self->debug_printf( "READY non-pipelined" );
-      ( shift @$queue )->done( $self );
+      while( @$queue ) {
+         my $f = shift @$queue;
+         next if $f->is_cancelled;
+
+         $f->done( $self );
+         last;
+      }
    }
    else {
       $self->debug_printf( "READY cannot-run queue=%d idle=%s",
@@ -197,6 +208,11 @@ sub request
 
    if( $expect_continue ) {
       $req->init_header( "Expect", "100-continue" );
+   }
+
+   if( $self->{decode_content} ) {
+      #$req->init_header( "Accept-Encoding", Net::Async::HTTP->can_decode )
+      $req->init_header( "Accept-Encoding", "gzip" );
    }
 
    my $f = $self->loop->new_future;
@@ -292,6 +308,14 @@ sub request
 
       my $code = $header->code;
 
+      my $content_encoding = $header->header( "Content-Encoding" );
+
+      my $decoder;
+      if( $content_encoding and
+          $decoder = Net::Async::HTTP->can_decode( $content_encoding ) ) {
+         $header->init_header( "X-Original-Content-Encoding" => $header->remove_header( "Content-Encoding" ) );
+      }
+
       # can_pipeline is set for HTTP/1.1 or above; presume it can keep-alive if set
       my $connection_close = lc( $header->header( "Connection" ) || ( $self->{can_pipeline} ? "keep-alive" : "close" ) )
                               eq "close";
@@ -360,6 +384,16 @@ sub request
                   # TODO: Actually use the trailer
 
                   $self->debug_printf( "BODY done" );
+
+                  my $final;
+                  if( $decoder and not eval { $final = $decoder->(); 1 } ) {
+                     $self->debug_printf( "ERROR decode failed" );
+                     $f->fail( "Decode error $@", http => undef, $req );
+                     $self->close;
+                     return undef;
+                  }
+                  $final = $decoder->() if $decoder;
+
                   $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
                   $self->_request_done;
                   return undef; # Finished
@@ -371,6 +405,13 @@ sub request
                # Chunk body
                my $chunk = substr( $$buffref, 0, $chunk_length, "" );
                undef $chunk_length;
+
+               if( $decoder and not eval { $chunk = $decoder->( $chunk ); 1 } ) {
+                  $self->debug_printf( "ERROR decode failed" );
+                  $f->fail( "Decode error $@", http => undef, $req );
+                  $self->close;
+                  return undef;
+               }
 
                unless( $$buffref =~ s/^$CRLF// ) {
                   $self->debug_printf( "ERROR chunk without CRLF" );
@@ -408,14 +449,30 @@ sub request
 
             # This will truncate it if the server provided too much
             my $content = substr( $$buffref, 0, $content_length, "" );
+            $content_length -= length $content;
+
+            if( $decoder and not eval { $content = $decoder->( $content ); 1 } ) {
+               $self->debug_printf( "ERROR decode failed" );
+               $f->fail( "Decode error $@", http => undef, $req );
+               $self->close;
+               return undef;
+            }
 
             $on_body_chunk->( $content );
-
-            $content_length -= length $content;
 
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
                $self->close if $connection_close;
+
+               my $final;
+               if( $decoder and not eval { $final = $decoder->(); 1 } ) {
+                  $self->debug_printf( "ERROR decode failed" );
+                  $f->fail( "Decode error $@", http => undef, $req );
+                  $self->close;
+                  return undef;
+               }
+               $on_body_chunk->( $final ) if defined $final;
+
                $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
                $self->_request_done;
                return undef;
@@ -437,8 +494,17 @@ sub request
 
             $stall_timer->reset if $stall_timer;
 
-            $on_body_chunk->( $$buffref );
+            my $content = $$buffref;
             $$buffref = "";
+
+            if( $decoder and not eval { $content = $decoder->( $content ); 1 } ) {
+               $self->debug_printf( "ERROR decode failed" );
+               $f->fail( "Decode error $@", http => undef, $req );
+               $self->close;
+               return undef;
+            }
+
+            $on_body_chunk->( $content );
 
             return 0 unless $closed;
 
@@ -448,6 +514,16 @@ sub request
             $self->close;
 
             $self->debug_printf( "BODY done" );
+
+            my $final;
+            if( $decoder and not eval { $final = $decoder->(); 1 } ) {
+               $self->debug_printf( "ERROR decode failed" );
+               $f->fail( "Decode error $@", http => undef, $req );
+               $self->close;
+               return undef;
+            }
+            $on_body_chunk->( $final ) if defined $final;
+
             $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
             # $self already closed
             $self->_request_done;

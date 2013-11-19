@@ -157,6 +157,20 @@ PARAMETERS
             of the string names `lowdelay', `throughput', `reliability' or
             `mincost'. If undefined or left absent, no option will be set.
 
+    decode_content => BOOL
+            Optional. If true, incoming responses that have a recognised
+            `Content-Encoding' are handled by the module, and decompressed
+            content is passed to the body handling callback or returned in
+            the `HTTP::Response'. See CONTENT DECODING below for details of
+            which encoding methods are recognised. When this option is
+            enabled, outgoing requests also have the `Accept-Encoding'
+            header added to them if it does not already exist.
+
+            Currently the default is false, because this behaviour is new,
+            but it may default to true in a later version. Applications
+            which care which behaviour applies should set this to a defined
+            value to ensure it doesn't change.
+
 METHODS
     When returning a Future, the following methods all indicate HTTP-level
     errors using the Future failure name of `http'. If the error relates to
@@ -324,6 +338,41 @@ SUBCLASS METHODS
   $http->process_response( $response )
     Called after a non-redirect `HTTP::Response' has been received from a
     server. The originating request will be set in the object.
+
+CONTENT DECODING
+    If the required decompression modules are installed and available,
+    compressed content can be decoded. If the received `Content-Encoding' is
+    recognised and the required module is available, the content is
+    transparently decoded and the decoded content is returned in the
+    resulting response object, or passed to the data chunk handler. In this
+    case, the original `Content-Encoding' header will be deleted from the
+    response, and its value will be available instead as
+    `X-Original-Content-Encoding'.
+
+    The following content encoding types are recognised by these modules:
+
+    * gzip (q=0.7) and deflate (q=0.5)
+        Recognised if Compress::Raw::Zlib is installed.
+
+    * bzip2 (q=0.8)
+        Recognised if Compress::Bzip2 is installed.
+
+    Other content encoding types can be registered by calling the following
+    method
+
+  Net::Async::HTTP->register_decoder( $name, $q, $make_decoder )
+    Registers an encoding type called `$name', at the quality value `$q'. In
+    order to decode this encoding type, `$make_decoder' will be invoked with
+    no paramters, and expected to return a CODE reference to perform one
+    instance of decoding.
+
+     $decoder = $make_decoder->()
+
+    This decoder will be invoked on string buffers to decode them until the
+    end of stream is reached, when it will be invoked with no arguments.
+
+     $content = $decoder->( $encoded_content )
+     $content = $decoder->() # EOS
 
 EXAMPLES
   Concurrent GET

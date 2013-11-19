@@ -29,6 +29,7 @@ t/14conn-max.t
 t/15conn-errors.t
 t/16max-in-flight.t
 t/17on-write.t
+t/18content-coding.t
 t/20local-connect.t
 t/21local-connect-ssl.t
 t/22local-connect-pipeline.t

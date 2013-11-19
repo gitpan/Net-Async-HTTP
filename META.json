@@ -24,6 +24,9 @@
          }
       },
       "runtime" : {
+         "recommends" : {
+            "Compress::Raw::Zlib" : "0"
+         },
          "requires" : {
             "Future" : "0.17",
             "Future::Utils" : "0.16",
@@ -40,11 +43,11 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.31"
+         "version" : "0.32"
       },
       "Net::Async::HTTP::Connection" : {
          "file" : "lib/Net/Async/HTTP/Connection.pm",
-         "version" : "0.31"
+         "version" : "0.32"
       }
    },
    "release_status" : "stable",
@@ -53,5 +56,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.31"
+   "version" : "0.32"
 }

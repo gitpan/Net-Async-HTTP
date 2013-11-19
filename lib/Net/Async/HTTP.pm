@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.31';
+our $VERSION = '0.32';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -245,6 +245,19 @@ should either be a C<IPTOS_*> constant, or one of the string names
 C<lowdelay>, C<throughput>, C<reliability> or C<mincost>. If undefined or left
 absent, no option will be set.
 
+=item decode_content => BOOL
+
+Optional. If true, incoming responses that have a recognised
+C<Content-Encoding> are handled by the module, and decompressed content is
+passed to the body handling callback or returned in the C<HTTP::Response>. See
+L</CONTENT DECODING> below for details of which encoding methods are
+recognised. When this option is enabled, outgoing requests also have the
+C<Accept-Encoding> header added to them if it does not already exist.
+
+Currently the default is false, because this behaviour is new, but it may
+default to true in a later version. Applications which care which behaviour
+applies should set this to a defined value to ensure it doesn't change.
+
 =back
 
 =cut
@@ -257,7 +270,7 @@ sub configure
    foreach (qw( user_agent max_redirects max_in_flight max_connections_per_host
       timeout stall_timeout proxy_host proxy_port cookie_jar pipeline
       local_host local_port local_addrs local_addr fail_on_error
-      read_len write_len ))
+      read_len write_len decode_content ))
    {
       $self->{$_} = delete $params{$_} if exists $params{$_};
    }
@@ -350,11 +363,9 @@ sub get_connection
    if( !$self->{max_connections_per_host} or @$conns < $self->{max_connections_per_host} ) {
       my $conn = Net::Async::HTTP::Connection->new(
          notifier_name => "$host:$port",
-         max_in_flight => $self->{max_in_flight},
-         pipeline      => $self->{pipeline},
          ready_queue   => $ready_queue,
-         read_len      => $self->{read_len},
-         write_len     => $self->{write_len},
+         ( map { $_ => $self->{$_} }
+            qw( max_in_flight pipeline read_len write_len decode_content ) ),
 
          on_closed => sub {
             my $conn = shift;
@@ -372,7 +383,7 @@ sub get_connection
          on_error => sub {
             my $conn = shift;
 
-            $f->fail( @_ );
+            $f->fail( @_ ) unless $f->is_cancelled;
 
             @$conns = grep { $_ != $conn } @$conns;
             @$ready_queue = grep { $_ != $f } @$ready_queue;
@@ -886,6 +897,123 @@ sub process_response
    my ( $response ) = @_;
 
    $self->{cookie_jar}->extract_cookies( $response ) if $self->{cookie_jar};
+}
+
+=head1 CONTENT DECODING
+
+If the required decompression modules are installed and available, compressed
+content can be decoded. If the received C<Content-Encoding> is recognised and
+the required module is available, the content is transparently decoded and the
+decoded content is returned in the resulting response object, or passed to the
+data chunk handler. In this case, the original C<Content-Encoding> header will
+be deleted from the response, and its value will be available instead as
+C<X-Original-Content-Encoding>.
+
+The following content encoding types are recognised by these modules:
+
+=over 4
+
+=cut
+
+=item * gzip (q=0.7) and deflate (q=0.5)
+
+Recognised if L<Compress::Raw::Zlib> is installed.
+
+=cut
+
+if( eval { require Compress::Raw::Zlib } ) {
+   my $make_zlib_decoder = sub {
+      my ( $bits ) = @_;
+      my $inflator = Compress::Raw::Zlib::Inflate->new(
+         -ConsumeInput => 0,
+         -WindowBits => $bits,
+      );
+      sub {
+         my $output;
+         my $status = @_ ? $inflator->inflate( $_[0], $output )
+                         : $inflator->inflate( "", $output, 1 );
+         die "$status\n" if $status && $status != Compress::Raw::Zlib::Z_STREAM_END();
+         return $output;
+      };
+   };
+
+   # RFC1950
+   __PACKAGE__->register_decoder(
+      deflate => 0.5, sub { $make_zlib_decoder->( 15 ) },
+   );
+
+   # RFC1952
+   __PACKAGE__->register_decoder(
+      gzip => 0.7, sub { $make_zlib_decoder->( Compress::Raw::Zlib::WANT_GZIP() ) },
+   );
+}
+
+=item * bzip2 (q=0.8)
+
+Recognised if L<Compress::Bzip2> is installed.
+
+=cut
+
+if( eval { require Compress::Bzip2 } ) {
+   __PACKAGE__->register_decoder(
+      bzip2 => 0.8, sub {
+         my $inflator = Compress::Bzip2::inflateInit();
+         sub {
+            return unless my ( $in ) = @_;
+            my $out = $inflator->bzinflate( \$in );
+            die $inflator->bzerror."\n" if !defined $out;
+            return $out;
+         };
+      }
+   );
+}
+
+=back
+
+Other content encoding types can be registered by calling the following method
+
+=head2 Net::Async::HTTP->register_decoder( $name, $q, $make_decoder )
+
+Registers an encoding type called C<$name>, at the quality value C<$q>. In
+order to decode this encoding type, C<$make_decoder> will be invoked with no
+paramters, and expected to return a CODE reference to perform one instance of
+decoding.
+
+ $decoder = $make_decoder->()
+
+This decoder will be invoked on string buffers to decode them until
+the end of stream is reached, when it will be invoked with no arguments.
+
+ $content = $decoder->( $encoded_content )
+ $content = $decoder->() # EOS
+
+=cut
+
+{
+   my %DECODERS; # {$name} = [$q, $make_decoder]
+
+   sub register_decoder
+   {
+      shift;
+      my ( $name, $q, $make_decoder ) = @_;
+
+      $DECODERS{$name} = [ $q, $make_decoder ];
+   }
+
+   sub can_decode
+   {
+      shift;
+      if( @_ ) {
+         my ( $name ) = @_;
+
+         return unless my $d = $DECODERS{$name};
+         return $d->[1]->();
+      }
+      else {
+         my @ds = sort { $DECODERS{$b}[0] <=> $DECODERS{$a}[0] } keys %DECODERS;
+         return join ", ", map { "$_;q=$DECODERS{$_}[0]" } @ds;
+      }
+   }
 }
 
 =head1 EXAMPLES
