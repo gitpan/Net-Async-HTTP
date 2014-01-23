@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.32';
+our $VERSION = '0.33';
 
 use Carp;
 
@@ -23,6 +23,7 @@ my $CRLF = "\x0d\x0a"; # More portable than \r\n
 # Indices into responder/ready queue elements
 use constant ON_READ  => 0;
 use constant ON_ERROR => 1;
+use constant IS_DONE  => 2;
 
 # Detect whether HTTP::Message properly trims whitespace in header values. If
 # it doesn't, we have to deploy a workaround to fix them up.
@@ -62,6 +63,8 @@ sub configure
          my $self = shift;
 
          $self->debug_printf( "CLOSED" );
+
+         $self->error_all( "Connection closed" );
 
          undef $self->{ready_queue};
          $on_closed->( $self );
@@ -150,7 +153,7 @@ sub on_read
    my ( $buffref, $closed ) = @_;
 
    if( my $head = $self->{responder_queue}[0] ) {
-      my $ret = $head->[ON_READ]->( $self, $buffref, $closed );
+      my $ret = $head->[ON_READ]->( $self, $buffref, $closed, $head );
 
       if( defined $ret ) {
          return $ret if !ref $ret;
@@ -181,7 +184,7 @@ sub error_all
    my $self = shift;
 
    while( my $head = shift @{ $self->{responder_queue} } ) {
-      $head->[ON_ERROR]->( @_ );
+      $head->[ON_ERROR]->( @_ ) unless $head->[IS_DONE];
    }
 }
 
@@ -230,9 +233,11 @@ sub request
          on_expire => sub {
             my $self = shift;
 
-            $self->parent->close_now;
+            my $conn = $self->parent;
 
-            $f->fail( "Stalled while $stall_reason", http => undef, $req );
+            $f->fail( "Stalled while $stall_reason", stall_timeout => );
+
+            $conn->close_now;
          }
       );
       $self->add_child( $stall_timer );
@@ -258,7 +263,7 @@ sub request
    }
 
    my $on_read = sub {
-      my ( $self, $buffref, $closed ) = @_;
+      my ( $self, $buffref, $closed, $responder ) = @_;
 
       if( $stall_timer ) {
          $stall_reason = "receiving response header";
@@ -332,6 +337,7 @@ sub request
       # 204 (No Content) nor 304 (Not Modified)
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
          $self->debug_printf( "BODY done" );
+         $responder->[IS_DONE]++;
          $self->close if $connection_close;
          $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
          $self->_request_done;
@@ -384,6 +390,7 @@ sub request
                   # TODO: Actually use the trailer
 
                   $self->debug_printf( "BODY done" );
+                  $responder->[IS_DONE]++;
 
                   my $final;
                   if( $decoder and not eval { $final = $decoder->(); 1 } ) {
@@ -436,6 +443,7 @@ sub request
 
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
+            $responder->[IS_DONE]++;
             $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
             $self->_request_done;
             return undef; # Finished
@@ -462,6 +470,7 @@ sub request
 
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
+               $responder->[IS_DONE]++;
                $self->close if $connection_close;
 
                my $final;
@@ -511,6 +520,7 @@ sub request
             # TODO: IO::Async probably ought to do this. We need to fire the
             # on_closed event _before_ calling on_body_chunk, to clear the
             # connection cache in case another request comes - e.g. HEAD->GET
+            $responder->[IS_DONE]++;
             $self->close;
 
             $self->debug_printf( "BODY done" );
@@ -580,7 +590,10 @@ sub request
 
    $self->{requests_in_flight}++;
 
-   push @{ $self->{responder_queue} }, [ $on_read, $f->fail_cb ];
+   push @{ $self->{responder_queue} }, [ $on_read, sub {
+      # Protect against double-fail during ->error_all
+      $f->fail( @_ ) unless $f->is_ready;
+   } ];
 
    return $f;
 }

@@ -282,6 +282,11 @@ METHODS
             this one request. If not specified, will use the configured
             defaults.
 
+            On a timeout, the returned future will fail with either
+            `timeout' or `stall_timeout' as the operation name.
+
+             ( $message, "timeout" ) = $f->failure
+
   $http->do_request( %args )
     When not returning a future, the following extra arguments are used as
     callbacks instead:
@@ -352,7 +357,8 @@ CONTENT DECODING
     The following content encoding types are recognised by these modules:
 
     * gzip (q=0.7) and deflate (q=0.5)
-        Recognised if Compress::Raw::Zlib is installed.
+        Recognised if Compress::Raw::Zlib version 2.057 or newer is
+        installed.
 
     * bzip2 (q=0.8)
         Recognised if Compress::Bzip2 is installed.
@@ -407,7 +413,7 @@ SEE ALSO
 SPONSORS
     Parts of this code were paid for by
 
-    * Socialflow http://www.socialflow.com
+    * SocialFlow http://www.socialflow.com
 
     * Shadowcat Systems http://www.shadow.cat
 

@@ -4,7 +4,7 @@
       "Paul Evans <leonerd@leonerd.org.uk>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.4007, CPAN::Meta::Converter version 2.132830",
+   "generated_by" : "Module::Build version 0.4203",
    "license" : [
       "perl_5"
    ],
@@ -25,10 +25,10 @@
       },
       "runtime" : {
          "recommends" : {
-            "Compress::Raw::Zlib" : "0"
+            "Compress::Raw::Zlib" : "2.057"
          },
          "requires" : {
-            "Future" : "0.17",
+            "Future" : "0.21",
             "Future::Utils" : "0.16",
             "HTTP::Request" : "0",
             "HTTP::Request::Common" : "0",
@@ -43,11 +43,11 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.32"
+         "version" : "0.33"
       },
       "Net::Async::HTTP::Connection" : {
          "file" : "lib/Net/Async/HTTP/Connection.pm",
-         "version" : "0.32"
+         "version" : "0.33"
       }
    },
    "release_status" : "stable",
@@ -56,5 +56,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.32"
+   "version" : "0.33"
 }

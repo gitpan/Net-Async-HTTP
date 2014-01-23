@@ -39,7 +39,8 @@ local *IO::Async::Handle::connect = sub {
 
 # RFC 2616 "gzip"
 SKIP: {
-   skip "Compress::Raw::Zlib not available", 4 unless eval { require Compress::Raw::Zlib };
+   skip "Compress::Raw::Zlib not available", 4 unless eval { require Compress::Raw::Zlib and $Compress::Raw::Zlib::VERSION >= 2.057 };
+   diag( "Using optional dependency Compress::Raw::Zlib $Compress::Raw::Zlib::VERSION" );
 
    my $f = $http->GET( "http://host/gzip" );
    $f->on_fail( sub { $f->get } );
@@ -76,7 +77,7 @@ SKIP: {
 
 # RFC 2616 "deflate"
 SKIP: {
-   skip "Compress::Raw::Zlib not available", 3 unless eval { require Compress::Raw::Zlib };
+   skip "Compress::Raw::Zlib not available", 3 unless eval { require Compress::Raw::Zlib and $Compress::Raw::Zlib::VERSION >= 2.057 };
 
    my $f = $http->GET( "http://host/deflate" );
    $f->on_fail( sub { $f->get } );
@@ -110,6 +111,7 @@ SKIP: {
 
 SKIP: {
    skip "Compress::Bzip2 not available", 3 unless eval { require Compress::Bzip2 };
+   diag( "Using optional dependency Compress::Bzip2 $Compress::Bzip2::VERSION" );
 
    my $f = $http->GET( "http://host/bzip2" );
    $f->on_fail( sub { $f->get } );
@@ -122,11 +124,6 @@ SKIP: {
       my $content = "";
       $content .= $compressor->bzdeflate( my $tmp = $TEST_CONTENT );
       $content .= $compressor->bzclose;
-
-      {
-         open my $fh, ">", "content.bz2";
-         print $fh $content;
-      }
 
       $peersock->syswrite( sprintf "HTTP/1.1 200 OK$CRLF" .
          "Content-Length: %d$CRLF" .

@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.32';
+our $VERSION = '0.33';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -26,6 +26,7 @@ use URI;
 use IO::Async::Stream 0.59;
 use IO::Async::Loop 0.59; # ->connect( handle ) ==> $stream
 
+use Future 0.21; # ->then_with_f
 use Future::Utils 0.16 qw( repeat );
 
 use Scalar::Util qw( blessed );
@@ -330,6 +331,10 @@ sub connect_connection
       %args,
    )->on_done( sub {
       my ( $stream ) = @_;
+      $stream->configure(
+         notifier_name => "$host:$port,fd=" . $stream->read_handle->fileno,
+      );
+
       # Defend against ->setsockopt doing silly things like detecting SvPOK()
       $stream->read_handle->setsockopt( IPPROTO_IP, IP_TOS, $self->{ip_tos}+0 ) if defined $self->{ip_tos};
    })->on_fail( sub {
@@ -362,7 +367,7 @@ sub get_connection
 
    if( !$self->{max_connections_per_host} or @$conns < $self->{max_connections_per_host} ) {
       my $conn = Net::Async::HTTP::Connection->new(
-         notifier_name => "$host:$port",
+         notifier_name => "$host:$port,connecting",
          ready_queue   => $ready_queue,
          ( map { $_ => $self->{$_} }
             qw( max_in_flight pipeline read_len write_len decode_content ) ),
@@ -524,6 +529,11 @@ default to the value given in the constructor.
 Optional. Overrides the object's configured timeout values for this one
 request. If not specified, will use the configured defaults.
 
+On a timeout, the returned future will fail with either C<timeout> or
+C<stall_timeout> as the operation name.
+
+ ( $message, "timeout" ) = $f->failure
+
 =back
 
 =head2 $http->do_request( %args )
@@ -683,9 +693,8 @@ sub _do_request
    } );
 
    if( $self->{fail_on_error} ) {
-      $future = $future->and_then( sub {
-         my $f = shift;
-         my $resp = $f->get;
+      $future = $future->then_with_f( sub {
+         my ( $f, $resp ) = @_;
          my $code = $resp->code;
 
          if( $code =~ m/^[45]/ ) {
@@ -741,7 +750,7 @@ sub do_request
       $future = Future->wait_any(
          $future,
          $self->loop->timeout_future( after => $timeout )
-                    ->transform( fail => sub { "Timed out", http => undef, $request } ),
+                    ->transform( fail => sub { "Timed out", timeout => } ),
       );
    }
 
@@ -753,7 +762,7 @@ sub do_request
 
    $future->on_fail( sub {
       my ( $message, $name, @rest ) = @_;
-      $args{on_error}->( $message, @rest ) if $name eq "http"
+      $args{on_error}->( $message, @rest );
    }) if $args{on_error};
 
    # DODGY HACK:
@@ -917,11 +926,11 @@ The following content encoding types are recognised by these modules:
 
 =item * gzip (q=0.7) and deflate (q=0.5)
 
-Recognised if L<Compress::Raw::Zlib> is installed.
+Recognised if L<Compress::Raw::Zlib> version 2.057 or newer is installed.
 
 =cut
 
-if( eval { require Compress::Raw::Zlib } ) {
+if( eval { require Compress::Raw::Zlib and $Compress::Raw::Zlib::VERSION >= 2.057 } ) {
    my $make_zlib_decoder = sub {
       my ( $bits ) = @_;
       my $inflator = Compress::Raw::Zlib::Inflate->new(
@@ -1064,7 +1073,7 @@ Parts of this code were paid for by
 
 =item *
 
-Socialflow L<http://www.socialflow.com>
+SocialFlow L<http://www.socialflow.com>
 
 =item *
 

@@ -56,6 +56,7 @@ local *IO::Async::Handle::connect = sub {
 
    ok( $future->is_ready, '$future is ready after timeout' );
    is( scalar $future->failure, "Timed out", '$future->failure after timeout' );
+   is( ( $future->failure )[1], "timeout", '$future->failure [1] is timeout' );
 
    is_refcount( $http, 2, '$http refcount 2 after ->do_request with timeout fails' );
 }
@@ -91,6 +92,7 @@ local *IO::Async::Handle::connect = sub {
 
    ok( $future->is_ready, '$future is ready after timeout' );
    is( scalar $future->failure, "Timed out", '$future->failure after timeout' );
+   is( ( $future->failure )[1], "timeout", '$future->failure [1] is timeout' );
 }
 
 {
@@ -142,6 +144,7 @@ local *IO::Async::Handle::connect = sub {
 
    wait_for { $future->is_ready };
    is( scalar $future->failure, "Stalled while writing request", '$future->failure for stall during write' );
+   is( ( $future->failure )[1], "stall_timeout", '$future->failure [1] is stall_timeout' );
 }
 
 # Stall during header read
@@ -156,6 +159,7 @@ local *IO::Async::Handle::connect = sub {
 
    wait_for { $future->is_ready };
    is( scalar $future->failure, "Stalled while waiting for response", '$future->failure for stall during response header' );
+   is( ( $future->failure )[1], "stall_timeout", '$future->failure [1] is stall_timeout' );
 }
 
 # Stall during header read
@@ -174,6 +178,7 @@ local *IO::Async::Handle::connect = sub {
 
    wait_for { $future->is_ready };
    is( scalar $future->failure, "Stalled while receiving response header", '$future->failure for stall during response header' );
+   is( ( $future->failure )[1], "stall_timeout", '$future->failure [1] is stall_timeout' );
 }
 
 # Stall during body read
@@ -194,6 +199,7 @@ local *IO::Async::Handle::connect = sub {
 
    wait_for { $future->is_ready };
    is( scalar $future->failure, "Stalled while receiving body", '$future->failure for stall during response body' );
+   is( ( $future->failure )[1], "stall_timeout", '$future->failure [1] is stall_timeout' );
 }
 
 $loop->remove( $http );

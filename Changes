@@ -1,5 +1,18 @@
 Revision history for Net-Async-HTTP
 
+0.33    2014/01/22 23:48:40
+        [CHANGES]
+         * Include connection flieno in notifier_name in case of multiple
+           connections to a given host+port
+         * Use different Future failure operation names for timeout and
+           stall_timeout
+
+        [BUGFIXES]
+         * Zlib compression needs Compress::Raw::Zlib 2.057 or newer
+         * Ensure that unpipelined requests can be cancelled
+         * Ensure that other pending requests on a connection are also
+           errored out when connection receives EOF
+
 0.32    2013/11/19 14:09:18
         [CHANGES]
          * Optionally decode encoded content and set the Accept-Encoding

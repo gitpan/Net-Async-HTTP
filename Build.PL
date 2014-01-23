@@ -6,7 +6,7 @@ use Module::Build;
 my $build = Module::Build->new(
    module_name => 'Net::Async::HTTP',
    requires => {
-      'Future' => '0.17', # immediates work OK
+      'Future' => '0.21', # ->then_with_f
       'Future::Utils' => '0.16',
       'HTTP::Request' => 0,
       'HTTP::Request::Common' => 0,
@@ -17,7 +17,7 @@ my $build = Module::Build->new(
       'URI' => 0,
    },
    recommends => {
-      'Compress::Raw::Zlib' => 0,
+      'Compress::Raw::Zlib' => '2.057', # Fails with Compress::Raw::Zlib 2.056 or before
    },
    build_requires => {
       'HTTP::Cookies' => 0,
