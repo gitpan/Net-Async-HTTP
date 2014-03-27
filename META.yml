@@ -3,37 +3,39 @@ abstract: 'use HTTP with C<IO::Async>'
 author:
   - 'Paul Evans <leonerd@leonerd.org.uk>'
 build_requires:
-  HTTP::Cookies: 0
-  IO::Async::Test: 0
-  Test::Identity: 0
-  Test::More: 0.88
-  Test::Refcount: 0
+  HTTP::Cookies: '0'
+  IO::Async::Test: '0'
+  Test::Identity: '0'
+  Test::More: '0.88'
+  Test::Refcount: '0'
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4203, CPAN::Meta::Converter version 2.133380'
+generated_by: 'Module::Build version 0.4204, CPAN::Meta::Converter version 2.133380'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+  version: '1.4'
 name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: 0.33
+    version: '0.34'
   Net::Async::HTTP::Connection:
     file: lib/Net/Async/HTTP/Connection.pm
-    version: 0.33
+    version: '0.34'
 recommends:
-  Compress::Raw::Zlib: 2.057
+  Compress::Raw::Zlib: '2.057'
 requires:
-  Future: 0.21
-  Future::Utils: 0.16
-  HTTP::Request: 0
-  HTTP::Request::Common: 0
-  HTTP::Response: 0
-  IO::Async::Loop: 0.59
-  IO::Async::Stream: 0.59
-  IO::Async::Timer::Countdown: 0
-  URI: 0
+  Future: '0.21'
+  Future::Utils: '0.16'
+  HTTP::Request: '0'
+  HTTP::Request::Common: '0'
+  HTTP::Response: '0'
+  IO::Async::Loop: '0.59'
+  IO::Async::Stream: '0.59'
+  IO::Async::Timer::Countdown: '0'
+  List::Util: '0'
+  Struct::Dumb: '0'
+  URI: '0'
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.33
+version: '0.34'

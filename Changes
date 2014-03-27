@@ -1,5 +1,15 @@
 Revision history for Net-Async-HTTP
 
+0.34    2014/03/27 18:26:43
+        [BUGFIXES]
+         * Don't attempt to reconnect ready queue items that already have a
+           pending connection attempt (RT92904)
+         * Don't close over $responder, thus avoiding a reference cycle leak
+           (RT93232 / RT92728)
+         * Avoid relying on strong forward references in Future, by creating
+           intentional cycles on pending Futures. Workaround for bugfix in
+           upcoming Future release.
+
 0.33    2014/01/22 23:48:40
         [CHANGES]
          * Include connection flieno in notifier_name in case of multiple

@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2014 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP::Connection;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 use Carp;
 
@@ -20,10 +20,8 @@ use HTTP::Response;
 
 my $CRLF = "\x0d\x0a"; # More portable than \r\n
 
-# Indices into responder/ready queue elements
-use constant ON_READ  => 0;
-use constant ON_ERROR => 1;
-use constant IS_DONE  => 2;
+use Struct::Dumb;
+struct Responder => [qw( on_read on_error is_done )];
 
 # Detect whether HTTP::Message properly trims whitespace in header values. If
 # it doesn't, we have to deploy a workaround to fix them up.
@@ -111,7 +109,7 @@ sub ready
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
       while( @$queue && $self->should_pipeline ) {
-         my $f = shift @$queue;
+         my $f = ( shift @$queue )->future;
          next if $f->is_cancelled;
 
          $f->done( $self );
@@ -120,7 +118,7 @@ sub ready
    elsif( @$queue and $self->is_idle ) {
       $self->debug_printf( "READY non-pipelined" );
       while( @$queue ) {
-         my $f = shift @$queue;
+         my $f = ( shift @$queue )->future;
          next if $f->is_cancelled;
 
          $f->done( $self );
@@ -153,12 +151,12 @@ sub on_read
    my ( $buffref, $closed ) = @_;
 
    if( my $head = $self->{responder_queue}[0] ) {
-      my $ret = $head->[ON_READ]->( $self, $buffref, $closed, $head );
+      my $ret = $head->on_read->( $self, $buffref, $closed, $head );
 
       if( defined $ret ) {
          return $ret if !ref $ret;
 
-         $head->[ON_READ] = $ret;
+         $head->on_read = $ret;
          return 1;
       }
 
@@ -184,7 +182,7 @@ sub error_all
    my $self = shift;
 
    while( my $head = shift @{ $self->{responder_queue} } ) {
-      $head->[ON_ERROR]->( @_ ) unless $head->[IS_DONE];
+      $head->on_error->( @_ ) unless $head->is_done;
    }
 }
 
@@ -337,7 +335,7 @@ sub request
       # 204 (No Content) nor 304 (Not Modified)
       if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
          $self->debug_printf( "BODY done" );
-         $responder->[IS_DONE]++;
+         $responder->is_done++;
          $self->close if $connection_close;
          $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
          $self->_request_done;
@@ -354,7 +352,7 @@ sub request
 
          $stall_reason = "receiving body chunks";
          return sub {
-            my ( $self, $buffref, $closed ) = @_;
+            my ( $self, $buffref, $closed, $responder ) = @_;
 
             $stall_timer->reset if $stall_timer;
 
@@ -375,7 +373,7 @@ sub request
 
                # Now the trailer
                return sub {
-                  my ( $self, $buffref, $closed ) = @_;
+                  my ( $self, $buffref, $closed, $responder ) = @_;
 
                   if( $closed ) {
                      $self->debug_printf( "ERROR closed" );
@@ -390,7 +388,7 @@ sub request
                   # TODO: Actually use the trailer
 
                   $self->debug_printf( "BODY done" );
-                  $responder->[IS_DONE]++;
+                  $responder->is_done++;
 
                   my $final;
                   if( $decoder and not eval { $final = $decoder->(); 1 } ) {
@@ -443,7 +441,7 @@ sub request
 
          if( $content_length == 0 ) {
             $self->debug_printf( "BODY done" );
-            $responder->[IS_DONE]++;
+            $responder->is_done++;
             $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
             $self->_request_done;
             return undef; # Finished
@@ -451,7 +449,7 @@ sub request
 
          $stall_reason = "receiving body";
          return sub {
-            my ( $self, $buffref, $closed ) = @_;
+            my ( $self, $buffref, $closed, $responder ) = @_;
 
             $stall_timer->reset if $stall_timer;
 
@@ -470,7 +468,7 @@ sub request
 
             if( $content_length == 0 ) {
                $self->debug_printf( "BODY done" );
-               $responder->[IS_DONE]++;
+               $responder->is_done++;
                $self->close if $connection_close;
 
                my $final;
@@ -499,7 +497,7 @@ sub request
 
          $stall_reason = "receiving body until EOF";
          return sub {
-            my ( $self, $buffref, $closed ) = @_;
+            my ( $self, $buffref, $closed, $responder ) = @_;
 
             $stall_timer->reset if $stall_timer;
 
@@ -520,7 +518,7 @@ sub request
             # TODO: IO::Async probably ought to do this. We need to fire the
             # on_closed event _before_ calling on_body_chunk, to clear the
             # connection cache in case another request comes - e.g. HEAD->GET
-            $responder->[IS_DONE]++;
+            $responder->is_done++;
             $self->close;
 
             $self->debug_printf( "BODY done" );
@@ -590,10 +588,11 @@ sub request
 
    $self->{requests_in_flight}++;
 
-   push @{ $self->{responder_queue} }, [ $on_read, sub {
-      # Protect against double-fail during ->error_all
-      $f->fail( @_ ) unless $f->is_ready;
-   } ];
+   push @{ $self->{responder_queue} }, Responder(
+      $on_read,
+      sub { $f->fail( @_ ) unless $f->is_ready; }, # on_error
+      0, # is_done
+   );
 
    return $f;
 }

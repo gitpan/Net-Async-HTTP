@@ -14,6 +14,8 @@ my $build = Module::Build->new(
       'IO::Async::Loop' => '0.59',
       'IO::Async::Stream' => '0.59',
       'IO::Async::Timer::Countdown' => 0,
+      'List::Util' => 0,
+      'Struct::Dumb' => 0,
       'URI' => 0,
    },
    recommends => {

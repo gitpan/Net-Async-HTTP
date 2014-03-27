@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2008-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2008-2014 -- leonerd@leonerd.org.uk
 
 package Net::Async::HTTP;
 
@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -30,6 +30,7 @@ use Future 0.21; # ->then_with_f
 use Future::Utils 0.16 qw( repeat );
 
 use Scalar::Util qw( blessed );
+use List::Util qw( first );
 use Socket qw( SOCK_STREAM IPPROTO_IP IP_TOS );
 BEGIN {
    if( $Socket::VERSION >= '2.010' ) {
@@ -52,6 +53,9 @@ use constant HTTPS_PORT => 443;
 
 use constant READ_LEN  => 64*1024; # 64 KiB
 use constant WRITE_LEN => 64*1024; # 64 KiB
+
+use Struct::Dumb;
+struct Ready => [qw( future connecting )];
 
 =head1 NAME
 
@@ -323,7 +327,7 @@ sub connect_connection
       push @{ $args{extensions} }, "SSL";
    }
 
-   $conn->connect(
+   my $f = $conn->connect(
       host     => $host,
       service  => $port,
       ( map { defined $self->{$_} ? ( $_ => $self->{$_} ) : () } qw( local_host local_port local_addrs local_addr ) ),
@@ -340,6 +344,8 @@ sub connect_connection
    })->on_fail( sub {
       $on_error->( $conn, "$host:$port - $_[0] failed [$_[-1]]" );
    });
+
+   $f->on_ready( sub { undef $f } ); # intentionally cycle
 }
 
 sub get_connection
@@ -356,50 +362,56 @@ sub get_connection
    my $conns = $self->{connections}{$key} ||= [];
    my $ready_queue = $self->{ready_queue}{$key} ||= [];
 
-   my $f = $args{future} || $self->loop->new_future;
-
    # Have a look to see if there are any idle connected ones first
    foreach my $conn ( @$conns ) {
-      $conn->is_idle and $conn->read_handle and return $f->done( $conn );
+      $conn->is_idle and $conn->read_handle and return Future->new->done( $conn );
    }
 
-   push @$ready_queue, $f unless $args{future};
+   my $ready = $args{ready};
+   $ready or push @$ready_queue, $ready = Ready( $self->loop->new_future, 0 );
 
-   if( !$self->{max_connections_per_host} or @$conns < $self->{max_connections_per_host} ) {
-      my $conn = Net::Async::HTTP::Connection->new(
-         notifier_name => "$host:$port,connecting",
-         ready_queue   => $ready_queue,
-         ( map { $_ => $self->{$_} }
-            qw( max_in_flight pipeline read_len write_len decode_content ) ),
+   my $f = $ready->future;
 
-         on_closed => sub {
-            my $conn = shift;
-
-            $conn->remove_from_parent;
-            @$conns = grep { $_ != $conn } @$conns;
-         },
-      );
-
-      $self->add_child( $conn );
-      push @$conns, $conn;
-
-      $self->connect_connection( %args,
-         conn => $conn,
-         on_error => sub {
-            my $conn = shift;
-
-            $f->fail( @_ ) unless $f->is_cancelled;
-
-            @$conns = grep { $_ != $conn } @$conns;
-            @$ready_queue = grep { $_ != $f } @$ready_queue;
-
-            if( @$ready_queue ) {
-               # Requeue another connection attempt as there's still more to do
-               $self->get_connection( %args, future => $ready_queue->[0] );
-            }
-         },
-      );
+   my $max = $self->{max_connections_per_host};
+   if( $max and @$conns >= $max ) {
+      return $f;
    }
+
+   $ready->connecting++;
+
+   my $conn = Net::Async::HTTP::Connection->new(
+      notifier_name => "$host:$port,connecting",
+      ready_queue   => $ready_queue,
+      ( map { $_ => $self->{$_} }
+         qw( max_in_flight pipeline read_len write_len decode_content ) ),
+
+      on_closed => sub {
+         my $conn = shift;
+
+         $conn->remove_from_parent;
+         @$conns = grep { $_ != $conn } @$conns;
+      },
+   );
+
+   $self->add_child( $conn );
+   push @$conns, $conn;
+
+   $self->connect_connection( %args,
+      conn => $conn,
+      on_error => sub {
+         my $conn = shift;
+
+         $f->fail( @_ ) unless $f->is_cancelled;
+
+         @$conns = grep { $_ != $conn } @$conns;
+         @$ready_queue = grep { $_ != $ready } @$ready_queue;
+
+         if( my $next = first { !$_->connecting } @$ready_queue ) {
+            # Requeue another connection attempt as there's still more to do
+            $self->get_connection( %args, ready => $next );
+         }
+      },
+   );
 
    return $f;
 }

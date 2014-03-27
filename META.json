@@ -4,7 +4,7 @@
       "Paul Evans <leonerd@leonerd.org.uk>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.4203",
+   "generated_by" : "Module::Build version 0.4204",
    "license" : [
       "perl_5"
    ],
@@ -36,6 +36,8 @@
             "IO::Async::Loop" : "0.59",
             "IO::Async::Stream" : "0.59",
             "IO::Async::Timer::Countdown" : "0",
+            "List::Util" : "0",
+            "Struct::Dumb" : "0",
             "URI" : "0"
          }
       }
@@ -43,11 +45,11 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.33"
+         "version" : "0.34"
       },
       "Net::Async::HTTP::Connection" : {
          "file" : "lib/Net/Async/HTTP/Connection.pm",
-         "version" : "0.33"
+         "version" : "0.34"
       }
    },
    "release_status" : "stable",
@@ -56,5 +58,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.33"
+   "version" : "0.34"
 }

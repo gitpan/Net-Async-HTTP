@@ -10,8 +10,8 @@ use IO::Async::Loop;
 use IO::Async::Stream;
 
 unless( eval { require Net::Async::HTTP::Server and
-               Net::Async::HTTP::Server->VERSION( '0.03' ) } ) {
-   plan skip_all => "Net::Async::HTTP::Server 0.03 is not available";
+               Net::Async::HTTP::Server->VERSION( '0.06' ) } ) {
+   plan skip_all => "Net::Async::HTTP::Server 0.06 is not available";
 }
 unless( eval { require Net::Async::HTTP } ) {
    plan skip_all => "Net::Async::HTTP is not available";
@@ -49,11 +49,10 @@ $loop->add( $server );
 $loop->add( my $client = Net::Async::HTTP->new );
 
 my ( $host, $port );
-# TODO: Make IO::Async::Listener handle SSL extension
-$loop->listen(
+$server->listen(
    addr => { family => "inet", socktype => "stream", ip => "127.0.0.1", port => 0 },
    on_listen => sub {
-      my $socket = $_[0];
+      my $socket = $_[0]->read_handle;
       $host = $socket->sockhost;
       $port = $socket->sockport;
    },
@@ -61,16 +60,7 @@ $loop->listen(
    extensions => [qw( SSL )],
    SSL_key_file  => "t/privkey.pem",
    SSL_cert_file => "t/server.pem",
-
-   on_listen_error => sub { die "Cannot listen - $_[-1]\n" },
-   on_ssl_error    => sub { die "SSL error - $_[-1]\n" },
-
-   on_stream => sub {
-      $server->on_stream( @_ );
-   },
-);
-
-wait_for { defined $host and defined $port };
+)->get;
 
 my $response;
 
@@ -81,7 +71,7 @@ $client->do_request(
    on_response => sub {
       ( $response ) = @_;
    },
-   on_error => sub { die "Test failed early - $_[-1]\n" },
+   on_error => sub { die "Test failed early - $_[0]\n" },
 );
 
 wait_for { $response };

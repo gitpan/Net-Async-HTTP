@@ -41,6 +41,8 @@ t/80cross-http.t
 t/81cross-https.t
 t/90rt75615.t
 t/90rt75616.t
+t/90rt92904.t
+t/90rt93232.t
 t/99pod.t
 t/privkey.pem
 t/server.pem
