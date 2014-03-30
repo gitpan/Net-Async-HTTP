@@ -18,10 +18,10 @@ name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: '0.34'
+    version: '0.35'
   Net::Async::HTTP::Connection:
     file: lib/Net/Async/HTTP/Connection.pm
-    version: '0.34'
+    version: '0.35'
 recommends:
   Compress::Raw::Zlib: '2.057'
 requires:
@@ -38,4 +38,4 @@ requires:
   URI: '0'
 resources:
   license: http://dev.perl.org/licenses/
-version: '0.34'
+version: '0.35'

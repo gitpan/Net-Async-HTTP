@@ -12,6 +12,7 @@ use Net::Async::HTTP;
 GetOptions(
    'local-host=s' => \my $LOCAL_HOST,
    'local-port=i' => \my $LOCAL_PORT,
+   'timeout=f'    => \my $TIMEOUT,
 ) or exit 1;
 
 my $loop = IO::Async::Loop->new;
@@ -22,6 +23,8 @@ my $ua = Net::Async::HTTP->new(
    decode_content => 1,
 );
 $loop->add( $ua );
+
+$ua->configure( timeout => $TIMEOUT ) if defined $TIMEOUT;
 
 $ua->GET( $ARGV[0] )
    ->on_done( sub {

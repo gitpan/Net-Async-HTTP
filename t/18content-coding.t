@@ -110,7 +110,8 @@ SKIP: {
 }
 
 SKIP: {
-   skip "Compress::Bzip2 not available", 3 unless eval { require Compress::Bzip2 };
+   # Compress::Bzip2 2.09 appears to fail
+   skip "Compress::Bzip2 not available", 3 unless eval { require Compress::Bzip2 and $Compress::Bzip2::VERSION >= 2.10 };
    diag( "Using optional dependency Compress::Bzip2 $Compress::Bzip2::VERSION" );
 
    my $f = $http->GET( "http://host/bzip2" );

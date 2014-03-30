@@ -1,5 +1,15 @@
 Revision history for Net-Async-HTTP
 
+0.35    2014/03/30 20:58:34
+        [BUGFIXES]
+         * Reparse URI scheme after redirect, so host/port/SSLness are reset
+           correctly (RT94303)
+         * Requeue the next pending request after an HTTP/1.0-style EOF
+           (RT94304)
+         * Require at least Compress::Bzip2 2.10 to do bzip2 decompression
+        
+        Bugfixes sponsored by Cisco (http://www.cisco.com/)
+
 0.34    2014/03/27 18:26:43
         [BUGFIXES]
          * Don't attempt to reconnect ready queue items that already have a
@@ -9,6 +19,8 @@ Revision history for Net-Async-HTTP
          * Avoid relying on strong forward references in Future, by creating
            intentional cycles on pending Futures. Workaround for bugfix in
            upcoming Future release.
+
+        Bugfixes sponsored by NET-A-PORTER (http://www.net-a-porter.com/)
 
 0.33    2014/01/22 23:48:40
         [CHANGES]

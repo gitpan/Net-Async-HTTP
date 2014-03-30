@@ -361,7 +361,7 @@ CONTENT DECODING
         installed.
 
     * bzip2 (q=0.8)
-        Recognised if Compress::Bzip2 is installed.
+        Recognised if Compress::Bzip2 version 2.10 or newer is installed.
 
     Other content encoding types can be registered by calling the following
     method
@@ -411,11 +411,15 @@ SEE ALSO
         HTTP/1.1
 
 SPONSORS
-    Parts of this code were paid for by
+    Parts of this code, or bugfixes to it were paid for by
 
     * SocialFlow http://www.socialflow.com
 
     * Shadowcat Systems http://www.shadow.cat
+
+    * NET-A-PORTER http://www.net-a-porter.com
+
+    * Cisco http://www.cisco.com
 
 AUTHOR
     Paul Evans <leonerd@leonerd.org.uk>

@@ -244,6 +244,27 @@ do_test_req( "GET with empty body",
    expect_res_content => "",
 );
 
+$req = HTTP::Request->new( GET => "/" );
+
+do_test_req( "GET with no response headers",
+   req => $req,
+   host => "myhost",
+
+   expect_req_firstline => "GET / HTTP/1.1",
+   expect_req_headers => {
+      Host => "myhost",
+   },
+
+   response => "HTTP/1.0 200 OK$CRLF".
+               $CRLF .
+               "Your data here",
+   close_after_response => 1,
+
+   expect_res_code => 200,
+   expect_req_headers => {},
+   expect_res_content => "Your data here",
+);
+
 $req = HTTP::Request->new( GET => "/somethingmissing", [ Host => "somewhere" ] );
 
 do_test_req( "GET not found",

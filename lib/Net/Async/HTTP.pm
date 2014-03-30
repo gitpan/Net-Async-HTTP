@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.34';
+our $VERSION = '0.35';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -387,9 +387,15 @@ sub get_connection
 
       on_closed => sub {
          my $conn = shift;
+         my $http = $conn->parent;
 
          $conn->remove_from_parent;
          @$conns = grep { $_ != $conn } @$conns;
+
+         if( my $next = first { !$_->connecting } @$ready_queue ) {
+            # Requeue another connection attempt as there's still more to do
+            $http->get_connection( %args, ready => $next );
+         }
       },
    );
 
@@ -664,9 +670,14 @@ sub _do_request
             return Future->new->fail( "Unable to parse '$location' as a URI", http => $previous_response, $request );
          }
 
+         $self->debug_printf( "REDIRECT $loc_uri" );
+
          $args{on_redirect}->( $previous_response, $location ) if $args{on_redirect};
 
          %args = $self->_make_request_for_uri( $loc_uri, %args );
+         $request = $args{request};
+
+         undef $host; undef $port; undef $ssl;
       }
 
       my $uri = $request->uri;
@@ -731,6 +742,9 @@ sub do_request
    if( my $uri = delete $args{uri} ) {
       %args = $self->_make_request_for_uri( $uri, %args );
    }
+   elsif( !defined $args{request} ) {
+      croak "Require either 'uri' or 'request' argument";
+   }
 
    if( $args{on_header} ) {
       # ok
@@ -753,12 +767,12 @@ sub do_request
       croak "Expected 'on_response' or 'on_header' as CODE ref or to return a Future";
    }
 
+   my $on_error = delete $args{on_error};
    my $timeout = defined $args{timeout} ? $args{timeout} : $self->{timeout};
 
    my $future = $self->_do_request( %args );
 
    if( defined $timeout ) {
-      my $request = $args{req};
       $future = Future->wait_any(
          $future,
          $self->loop->timeout_future( after => $timeout )
@@ -774,20 +788,17 @@ sub do_request
 
    $future->on_fail( sub {
       my ( $message, $name, @rest ) = @_;
-      $args{on_error}->( $message, @rest );
-   }) if $args{on_error};
+      $on_error->( $message, @rest );
+   }) if $on_error;
 
    # DODGY HACK:
    # In void context we'll lose reference on the ->wait_any Future, so the
    # timeout logic will never happen. So lets purposely create a cycle by
    # capturing the $future in on_done/on_fail closures within itself. This
    # conveniently clears them out to drop the ref when done.
-   if( !defined wantarray and $args{on_header} || $args{on_response} || $args{on_error} ) {
-      $future->on_done( sub { undef $future } );
-      $future->on_fail( sub { undef $future } );
-   }
+   return $future if defined wantarray;
 
-   return $future;
+   $future->on_ready( sub { undef $future } );
 }
 
 sub _make_request_for_uri
@@ -971,11 +982,11 @@ if( eval { require Compress::Raw::Zlib and $Compress::Raw::Zlib::VERSION >= 2.05
 
 =item * bzip2 (q=0.8)
 
-Recognised if L<Compress::Bzip2> is installed.
+Recognised if L<Compress::Bzip2> version 2.10 or newer is installed.
 
 =cut
 
-if( eval { require Compress::Bzip2 } ) {
+if( eval { require Compress::Bzip2 and $Compress::Bzip2::VERSION >= 2.10 } ) {
    __PACKAGE__->register_decoder(
       bzip2 => 0.8, sub {
          my $inflator = Compress::Bzip2::inflateInit();
@@ -1079,7 +1090,7 @@ L<http://tools.ietf.org/html/rfc2616> - Hypertext Transfer Protocol -- HTTP/1.1
 
 =head1 SPONSORS
 
-Parts of this code were paid for by
+Parts of this code, or bugfixes to it were paid for by
 
 =over 2
 
@@ -1090,6 +1101,14 @@ SocialFlow L<http://www.socialflow.com>
 =item *
 
 Shadowcat Systems L<http://www.shadow.cat>
+
+=item *
+
+NET-A-PORTER L<http://www.net-a-porter.com>
+
+=item *
+
+Cisco L<http://www.cisco.com>
 
 =back
 
