@@ -21,6 +21,9 @@ testing_loop( $loop );
 
 my $http = Net::Async::HTTP->new(
    user_agent => "", # Don't put one in request headers
+
+   # This also checks that object-wide SSL params are applied
+   SSL_verify_mode => 0,
 );
 
 $loop->add( $http );
@@ -74,8 +77,6 @@ my $response;
 
 $http->do_request(
    uri => $local_uri,
-
-   SSL_verify_mode => 0,
 
    on_response => sub {
       $response = $_[0];

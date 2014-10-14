@@ -249,28 +249,54 @@ do_test_uri( "authenticated GET (URL embedded)",
    expect_res_content => "Shhhh!",
 );
 
-do_test_uri( "simple POST",
-   method  => "POST",
-   uri     => URI->new( "http://host5/handler" ),
-   content => "New content",
+do_test_uri( "simple PUT",
+   method  => "PUT",
+   uri     => URI->new( "http://host5/resource" ),
+   content => "The content",
    content_type => "text/plain",
 
-   expect_req_firstline => "POST /handler HTTP/1.1",
+   expect_req_firstline => "PUT /resource HTTP/1.1",
    expect_req_headers => {
       Host => "host5",
       'Content-Length' => 11,
       'Content-Type' => "text/plain",
    },
-   expect_req_content => "New content",
+   expect_req_content => "The content",
 
    response => "HTTP/1.1 201 Created$CRLF" . 
+               "Content-Length: 0$CRLF" .
+               "Connection: Keep-Alive$CRLF" .
+               $CRLF,
+
+   expect_res_code    => 201,
+   expect_res_headers => {
+      'Content-Length' => 0,
+      'Connection'     => "Keep-Alive",
+   },
+);
+
+do_test_uri( "simple POST",
+   method  => "POST",
+   uri     => URI->new( "http://host6/handler" ),
+   content => "New content",
+   content_type => "text/plain",
+
+   expect_req_firstline => "POST /handler HTTP/1.1",
+   expect_req_headers => {
+      Host => "host6",
+      'Content-Length' => 11,
+      'Content-Type' => "text/plain",
+   },
+   expect_req_content => "New content",
+
+   response => "HTTP/1.1 200 OK$CRLF" . 
                "Content-Length: 11$CRLF" .
                "Content-Type: text/plain$CRLF" .
                "Connection: Keep-Alive$CRLF" .
                $CRLF .
                "New content",
 
-   expect_res_code    => 201,
+   expect_res_code    => 200,
    expect_res_headers => {
       'Content-Length' => 11,
       'Content-Type'   => "text/plain",
@@ -281,12 +307,12 @@ do_test_uri( "simple POST",
 
 do_test_uri( "form POST",
    method  => "POST",
-   uri     => URI->new( "http://host6/handler" ),
+   uri     => URI->new( "http://host7/handler" ),
    content => [ param => "value", another => "value with things" ],
 
    expect_req_firstline => "POST /handler HTTP/1.1",
    expect_req_headers => {
-      Host => "host6",
+      Host => "host7",
       'Content-Length' => 37,
       'Content-Type' => "application/x-www-form-urlencoded",
    },
@@ -310,11 +336,11 @@ do_test_uri( "form POST",
 
 do_test_uri( "plain string URI",
    method => "GET",
-   uri    => "http://host7/path",
+   uri    => "http://host8/path",
 
    expect_req_firstline => "GET /path HTTP/1.1",
    expect_req_headers => {
-      Host => "host7",
+      Host => "host8",
    },
 
    response => "HTTP/1.1 200 OK$CRLF" .

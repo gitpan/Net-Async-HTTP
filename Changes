@@ -1,5 +1,19 @@
 Revision history for Net-Async-HTTP
 
+0.36    2014/10/14 12:03:07
+        [CHANGES]
+         * Set the content of generated requests if a 'content' param is given
+           (RT97654)
+         * Store object-wide SSL params for convenience (RT98514)
+         * Clarify the final return value of the on_body_chunk handler
+           (RT98278)
+         * Nicer error message when a non-HTTP response header is received
+           (RT93231)
+
+        [BUGFIXES]
+         * 3xx responses without a Location header, and non-(GET|HEAD)
+           requests should not be redirected (RT98093)
+
 0.35    2014/03/30 20:58:34
         [BUGFIXES]
          * Reparse URI scheme after redirect, so host/port/SSLness are reset

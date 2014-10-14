@@ -73,105 +73,107 @@ DESCRIPTION
 PARAMETERS
     The following named parameters may be passed to `new' or `configure':
 
-    user_agent => STRING
-            A string to set in the `User-Agent' HTTP header. If not
-            supplied, one will be constructed that declares
-            `Net::Async::HTTP' and the version number.
+  user_agent => STRING
+    A string to set in the `User-Agent' HTTP header. If not supplied, one
+    will be constructed that declares `Net::Async::HTTP' and the version
+    number.
 
-    max_redirects => INT
-            Optional. How many levels of redirection to follow. If not
-            supplied, will default to 3. Give 0 to disable redirection
-            entirely.
+  max_redirects => INT
+    Optional. How many levels of redirection to follow. If not supplied,
+    will default to 3. Give 0 to disable redirection entirely.
 
-    max_in_flight => INT
-            Optional. The maximum number of in-flight requests to allow per
-            host when pipelining is enabled and supported on that host. If
-            more requests are made over this limit they will be queued
-            internally by the object and not sent to the server until
-            responses are received. If not supplied, will default to 4. Give
-            0 to disable the limit entirely.
+  max_in_flight => INT
+    Optional. The maximum number of in-flight requests to allow per host
+    when pipelining is enabled and supported on that host. If more requests
+    are made over this limit they will be queued internally by the object
+    and not sent to the server until responses are received. If not
+    supplied, will default to 4. Give 0 to disable the limit entirely.
 
-    max_connections_per_host => INT
-            Optional. Controls the maximum number of connections per
-            hostname/server port pair, before requests will be queued
-            awaiting one to be free. If not supplied, will default to 1.
-            Give 0 to disable the limit entirely. See also the Connection
-            Pooling section documented above.
+  max_connections_per_host => INT
+    Optional. Controls the maximum number of connections per hostname/server
+    port pair, before requests will be queued awaiting one to be free. If
+    not supplied, will default to 1. Give 0 to disable the limit entirely.
+    See also the Connection Pooling section documented above.
 
-    timeout => NUM
-            Optional. How long in seconds to wait before giving up on a
-            request. If not supplied then no default will be applied, and no
-            timeout will take place.
+  timeout => NUM
+    Optional. How long in seconds to wait before giving up on a request. If
+    not supplied then no default will be applied, and no timeout will take
+    place.
 
-    stall_timeout => NUM
-            Optional. How long in seconds to wait after each write or read
-            of data on a socket, before giving up on a request. This may be
-            more useful than `timeout' on large-file operations, as it will
-            not time out provided that regular progress is still being made.
+  stall_timeout => NUM
+    Optional. How long in seconds to wait after each write or read of data
+    on a socket, before giving up on a request. This may be more useful than
+    `timeout' on large-file operations, as it will not time out provided
+    that regular progress is still being made.
 
-    proxy_host => STRING
-    proxy_port => INT
-            Optional. Default values to apply to each `request' method.
+  proxy_host => STRING
+  proxy_port => INT
+    Optional. Default values to apply to each `request' method.
 
-    cookie_jar => HTTP::Cookies
-            Optional. A reference to a HTTP::Cookies object. Will be used to
-            set cookies in requests and store them from responses.
+  cookie_jar => HTTP::Cookies
+    Optional. A reference to a HTTP::Cookies object. Will be used to set
+    cookies in requests and store them from responses.
 
-    pipeline => BOOL
-            Optional. If false, disables HTTP/1.1-style request pipelining.
+  pipeline => BOOL
+    Optional. If false, disables HTTP/1.1-style request pipelining.
 
-    local_host => STRING
-    local_port => INT
-    local_addrs => ARRAY
-    local_addr => HASH or ARRAY
-            Optional. Parameters to pass on to the `connect' method used to
-            connect sockets to HTTP servers. Sets the local socket address
-            to `bind()' to. For more detail, see the documentation in
-            IO::Async::Connector.
+  local_host => STRING
+  local_port => INT
+  local_addrs => ARRAY
+  local_addr => HASH or ARRAY
+    Optional. Parameters to pass on to the `connect' method used to connect
+    sockets to HTTP servers. Sets the local socket address to `bind()' to.
+    For more detail, see the documentation in IO::Async::Connector.
 
-    fail_on_error => BOOL
-            Optional. Affects the behaviour of response handling when a
-            `4xx' or `5xx' response code is received. When false, these
-            responses will be processed as other responses and yielded as
-            the result of the future, or passed to the `on_response'
-            callback. When true, such an error response causes the future to
-            fail, or the `on_error' callback to be invoked.
+  fail_on_error => BOOL
+    Optional. Affects the behaviour of response handling when a `4xx' or
+    `5xx' response code is received. When false, these responses will be
+    processed as other responses and yielded as the result of the future, or
+    passed to the `on_response' callback. When true, such an error response
+    causes the future to fail, or the `on_error' callback to be invoked.
 
-            The HTTP response and request objects will be passed as well as
-            the code and message, and the failure name will be `http'.
+    The HTTP response and request objects will be passed as well as the code
+    and message, and the failure name will be `http'.
 
-             ( $code_message, "http", $response, $request ) = $f->failure
+     ( $code_message, "http", $response, $request ) = $f->failure
 
-             $on_error->( "$code $message", $response, $request )
+     $on_error->( "$code $message", $response, $request )
 
-    read_len => INT
-    write_len => INT
-            Optional. Used to set the reading and writing buffer lengths on
-            the underlying `IO::Async::Stream' objects that represent
-            connections to the server. If not define, a default of 64 KiB
-            will be used.
+  read_len => INT
+  write_len => INT
+    Optional. Used to set the reading and writing buffer lengths on the
+    underlying `IO::Async::Stream' objects that represent connections to the
+    server. If not define, a default of 64 KiB will be used.
 
-    ip_tos => INT or STRING
-            Optional. Used to set the `IP_TOS' socket option on client
-            sockets. If given, should either be a `IPTOS_*' constant, or one
-            of the string names `lowdelay', `throughput', `reliability' or
-            `mincost'. If undefined or left absent, no option will be set.
+  ip_tos => INT or STRING
+    Optional. Used to set the `IP_TOS' socket option on client sockets. If
+    given, should either be a `IPTOS_*' constant, or one of the string names
+    `lowdelay', `throughput', `reliability' or `mincost'. If undefined or
+    left absent, no option will be set.
 
-    decode_content => BOOL
-            Optional. If true, incoming responses that have a recognised
-            `Content-Encoding' are handled by the module, and decompressed
-            content is passed to the body handling callback or returned in
-            the `HTTP::Response'. See CONTENT DECODING below for details of
-            which encoding methods are recognised. When this option is
-            enabled, outgoing requests also have the `Accept-Encoding'
-            header added to them if it does not already exist.
+  decode_content => BOOL
+    Optional. If true, incoming responses that have a recognised
+    `Content-Encoding' are handled by the module, and decompressed content
+    is passed to the body handling callback or returned in the
+    `HTTP::Response'. See CONTENT DECODING below for details of which
+    encoding methods are recognised. When this option is enabled, outgoing
+    requests also have the `Accept-Encoding' header added to them if it does
+    not already exist.
 
-            Currently the default is false, because this behaviour is new,
-            but it may default to true in a later version. Applications
-            which care which behaviour applies should set this to a defined
-            value to ensure it doesn't change.
+    Currently the default is false, because this behaviour is new, but it
+    may default to true in a later version. Applications which care which
+    behaviour applies should set this to a defined value to ensure it
+    doesn't change.
+
+  SSL_*
+    Additionally, any parameters whose names start with `SSL_' will be
+    stored and passed on requests to perform SSL requests. This simplifies
+    configuration of common SSL parameters.
 
 METHODS
+    The following methods documented with a trailing call to `->get' return
+    Future instances.
+
     When returning a Future, the following methods all indicate HTTP-level
     errors using the Future failure name of `http'. If the error relates to
     a specific response it will be included. The original request is also
@@ -179,7 +181,7 @@ METHODS
 
      $f->fail( $message, "http", $response, $request )
 
-  $http->do_request( %args ) ==> $response
+  $response = $http->do_request( %args )->get
     Send an HTTP request to a server, returning a Future that will yield the
     response. The request may be represented by an HTTP::Request object, or
     a URI object, depending on the arguments passed.
@@ -211,10 +213,10 @@ METHODS
             Optional. The HTTP method. If missing, `GET' is used.
 
     content => STRING or ARRAY ref
-            Optional. The body content to use for `POST' requests. If this
-            is a plain scalar instead of an ARRAY ref, it will not be form
-            encoded. In this case, a `content_type' field must also be
-            supplied to describe it.
+            Optional. The body content to use for `PUT' or `POST' requests.
+            If this is a plain scalar instead of an ARRAY ref, it will not
+            be form encoded. In this case, a `content_type' field must also
+            be supplied to describe it.
 
     content_type => STRING
             The type of non-form data `content'.
@@ -303,12 +305,14 @@ METHODS
             the header of a response has been received. It is expected to
             return a `CODE' reference for handling chunks of body content.
             This `CODE' reference will be invoked with no arguments once the
-            end of the request has been reached.
+            end of the request has been reached, and whatever it returns
+            will be used as the result of the returned `Future', if there is
+            one.
 
              $on_body_chunk = $on_header->( $header )
 
                 $on_body_chunk->( $data )
-                $on_body_chunk->()
+                $response = $on_body_chunk->()
 
     on_error => CODE
             A callback that is invoked if an error occurs while trying to
@@ -323,11 +327,13 @@ METHODS
 
              $on_error->( $message, $response, $request )
 
-  $http->GET( $uri, %args ) ==> $response
-  $http->HEAD( $uri, %args ) ==> $response
-  $http->POST( $uri, $content, %args ) ==> $response
-    Convenient wrappers for using the `GET', `HEAD' or `POST' methods with a
-    `URI' object and few if any other arguments, returning a `Future'.
+  $response = $http->GET( $uri, %args )->get
+  $response = $http->HEAD( $uri, %args )->get
+  $response = $http->PUT( $uri, $content, %args )->get
+  $response = $http->POST( $uri, $content, %args )->get
+    Convenient wrappers for using the `GET', `HEAD', `PUT' or `POST' methods
+    with a `URI' object and few if any other arguments, returning a
+    `Future'.
 
     Remember that `POST' with non-form data (as indicated by a plain scalar
     instead of an `ARRAY' reference of form data name/value pairs) needs a

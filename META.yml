@@ -9,7 +9,7 @@ build_requires:
   Test::More: '0.88'
   Test::Refcount: '0'
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4204, CPAN::Meta::Converter version 2.133380'
+generated_by: 'Module::Build version 0.421, CPAN::Meta::Converter version 2.142060'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -18,10 +18,10 @@ name: Net-Async-HTTP
 provides:
   Net::Async::HTTP:
     file: lib/Net/Async/HTTP.pm
-    version: '0.35'
+    version: '0.36'
   Net::Async::HTTP::Connection:
     file: lib/Net/Async/HTTP/Connection.pm
-    version: '0.35'
+    version: '0.36'
 recommends:
   Compress::Raw::Zlib: '2.057'
 requires:
@@ -38,4 +38,4 @@ requires:
   URI: '0'
 resources:
   license: http://dev.perl.org/licenses/
-version: '0.35'
+version: '0.36'

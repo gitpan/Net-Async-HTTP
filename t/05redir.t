@@ -186,4 +186,77 @@ $loop->add( $http );
    is( $response->content, "Directory", 'Content of final response to local redirect' );
 }
 
+# 304 Not Modified should not redirect (RT98093)
+{
+   my $peersock;
+   no warnings 'redefine';
+   local *IO::Async::Handle::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      $args{host}    eq "host2" or die "Expected $args{host} eq host2";
+
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $self->set_handle( $selfsock );
+
+      return Future->new->done( $self );
+   };
+
+   my $f = $http->do_request(
+      uri => URI->new( "http://host2/unmod" ),
+
+      on_redirect => sub { die "Should not be redirected" },
+   );
+
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( "HTTP/1.1 304 Not Modified$CRLF" .
+                        $CRLF ); # 304 has no body
+
+   wait_for { $f->is_ready };
+
+   my $response = $f->get;
+   is( $response->code, 304, 'HTTP 304 response not redirected' );
+}
+
+# Methods other than GET and HEAD should not redirect
+{
+   my $peersock;
+   no warnings 'redefine';
+   local *IO::Async::Handle::connect = sub {
+      my $self = shift;
+      my %args = @_;
+
+      $args{host}    eq "host3" or die "Expected $args{host} eq host3";
+
+      ( my $selfsock, $peersock ) = IO::Async::OS->socketpair() or die "Cannot create socket pair - $!";
+      $self->set_handle( $selfsock );
+
+      return Future->new->done( $self );
+   };
+
+   my $f = $http->do_request(
+      method => "PUT",
+      uri    => URI->new( "http://host3/somewhere" ),
+      content => "new content",
+      content_type => "text/plain",
+
+      on_redirect => sub { die "Should not be redirected" },
+   );
+
+   my $request_stream = "";
+   wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
+
+   $peersock->syswrite( "HTTP/1.1 301 Moved Permanently$CRLF" .
+                        "Content-Length: 0$CRLF" .
+                        "Location: /somewhere/else$CRLF" .
+                        $CRLF );
+
+   wait_for { $f->is_ready };
+
+   my $response = $f->get;
+   is( $response->code, 301, 'POST request not redirected' );
+}
+
 done_testing;

@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.35';
+our $VERSION = '0.36';
 
 use Carp;
 
@@ -266,6 +266,12 @@ sub request
       if( $stall_timer ) {
          $stall_reason = "receiving response header";
          $stall_timer->reset;
+      }
+
+      if( length $$buffref >= 4 and $$buffref !~ m/^HTTP/ ) {
+         $self->debug_printf( "ERROR fail" );
+         $f->fail( "Did no receive HTTP response from server", http => undef, $req ) unless $f->is_cancelled;
+         $self->close_now;
       }
 
       unless( $$buffref =~ s/^(.*?$CRLF$CRLF)//s ) {

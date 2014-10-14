@@ -520,4 +520,20 @@ do_test_req( "request-implied authentication",
    expect_res_code => 200,
 );
 
+$req = HTTP::Request->new( GET => "/", [ Host => "myhost" ] );
+
+do_test_req( "Non-HTTP response",
+   req  => $req,
+   host => "myhost",
+
+   expect_req_firstline => "GET / HTTP/1.1",
+   expect_req_headers => {
+      Host => "myhost",
+   },
+
+   response => "Some other protocol, sorry\n",
+
+   expect_error => 1,
+);
+
 done_testing;

@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.35';
+our $VERSION = '0.36';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -148,25 +148,25 @@ sub _init
    $self->{write_len} = WRITE_LEN;
 
    $self->{max_connections_per_host} = 1;
+
+   $self->{ssl_params} = {};
 }
 
 =head1 PARAMETERS
 
 The following named parameters may be passed to C<new> or C<configure>:
 
-=over 8
-
-=item user_agent => STRING
+=head2 user_agent => STRING
 
 A string to set in the C<User-Agent> HTTP header. If not supplied, one will
 be constructed that declares C<Net::Async::HTTP> and the version number.
 
-=item max_redirects => INT
+=head2 max_redirects => INT
 
 Optional. How many levels of redirection to follow. If not supplied, will
 default to 3. Give 0 to disable redirection entirely.
 
-=item max_in_flight => INT
+=head2 max_in_flight => INT
 
 Optional. The maximum number of in-flight requests to allow per host when
 pipelining is enabled and supported on that host. If more requests are made
@@ -174,53 +174,53 @@ over this limit they will be queued internally by the object and not sent to
 the server until responses are received. If not supplied, will default to 4.
 Give 0 to disable the limit entirely.
 
-=item max_connections_per_host => INT
+=head2 max_connections_per_host => INT
 
 Optional. Controls the maximum number of connections per hostname/server port
 pair, before requests will be queued awaiting one to be free. If not supplied,
 will default to 1. Give 0 to disable the limit entirely. See also the
 L</Connection Pooling> section documented above.
 
-=item timeout => NUM
+=head2 timeout => NUM
 
 Optional. How long in seconds to wait before giving up on a request. If not
 supplied then no default will be applied, and no timeout will take place.
 
-=item stall_timeout => NUM
+=head2 stall_timeout => NUM
 
 Optional. How long in seconds to wait after each write or read of data on a
 socket, before giving up on a request. This may be more useful than
 C<timeout> on large-file operations, as it will not time out provided that
 regular progress is still being made.
 
-=item proxy_host => STRING
+=head2 proxy_host => STRING
 
-=item proxy_port => INT
+=head2 proxy_port => INT
 
 Optional. Default values to apply to each C<request> method.
 
-=item cookie_jar => HTTP::Cookies
+=head2 cookie_jar => HTTP::Cookies
 
 Optional. A reference to a L<HTTP::Cookies> object. Will be used to set
 cookies in requests and store them from responses.
 
-=item pipeline => BOOL
+=head2 pipeline => BOOL
 
 Optional. If false, disables HTTP/1.1-style request pipelining.
 
-=item local_host => STRING
+=head2 local_host => STRING
 
-=item local_port => INT
+=head2 local_port => INT
 
-=item local_addrs => ARRAY
+=head2 local_addrs => ARRAY
 
-=item local_addr => HASH or ARRAY
+=head2 local_addr => HASH or ARRAY
 
 Optional. Parameters to pass on to the C<connect> method used to connect
 sockets to HTTP servers. Sets the local socket address to C<bind()> to. For
 more detail, see the documentation in L<IO::Async::Connector>.
 
-=item fail_on_error => BOOL
+=head2 fail_on_error => BOOL
 
 Optional. Affects the behaviour of response handling when a C<4xx> or C<5xx>
 response code is received. When false, these responses will be processed as
@@ -235,22 +235,22 @@ message, and the failure name will be C<http>.
 
  $on_error->( "$code $message", $response, $request )
 
-=item read_len => INT
+=head2 read_len => INT
 
-=item write_len => INT
+=head2 write_len => INT
 
 Optional. Used to set the reading and writing buffer lengths on the underlying
 C<IO::Async::Stream> objects that represent connections to the server. If not
 define, a default of 64 KiB will be used.
 
-=item ip_tos => INT or STRING
+=head2 ip_tos => INT or STRING
 
 Optional. Used to set the C<IP_TOS> socket option on client sockets. If given,
 should either be a C<IPTOS_*> constant, or one of the string names
 C<lowdelay>, C<throughput>, C<reliability> or C<mincost>. If undefined or left
 absent, no option will be set.
 
-=item decode_content => BOOL
+=head2 decode_content => BOOL
 
 Optional. If true, incoming responses that have a recognised
 C<Content-Encoding> are handled by the module, and decompressed content is
@@ -263,7 +263,11 @@ Currently the default is false, because this behaviour is new, but it may
 default to true in a later version. Applications which care which behaviour
 applies should set this to a defined value to ensure it doesn't change.
 
-=back
+=head2 SSL_*
+
+Additionally, any parameters whose names start with C<SSL_> will be stored and
+passed on requests to perform SSL requests. This simplifies configuration of
+common SSL parameters.
 
 =cut
 
@@ -278,6 +282,10 @@ sub configure
       read_len write_len decode_content ))
    {
       $self->{$_} = delete $params{$_} if exists $params{$_};
+   }
+
+   foreach ( grep { m/^SSL_/ } keys %params ) {
+      $self->{ssl_params}{$_} = delete $params{$_};
    }
 
    if( exists $params{ip_tos} ) {
@@ -299,6 +307,9 @@ sub configure
 }
 
 =head1 METHODS
+
+The following methods documented with a trailing call to C<< ->get >> return
+L<Future> instances.
 
 When returning a Future, the following methods all indicate HTTP-level errors
 using the Future failure name of C<http>. If the error relates to a specific
@@ -422,7 +433,7 @@ sub get_connection
    return $f;
 }
 
-=head2 $http->do_request( %args ) ==> $response
+=head2 $response = $http->do_request( %args )->get
 
 Send an HTTP request to a server, returning a L<Future> that will yield the
 response. The request may be represented by an L<HTTP::Request> object, or a
@@ -466,9 +477,9 @@ Optional. The HTTP method. If missing, C<GET> is used.
 
 =item content => STRING or ARRAY ref
 
-Optional. The body content to use for C<POST> requests. If this is a plain
-scalar instead of an ARRAY ref, it will not be form encoded. In this case, a
-C<content_type> field must also be supplied to describe it.
+Optional. The body content to use for C<PUT> or C<POST> requests. If this is a
+plain scalar instead of an ARRAY ref, it will not be form encoded. In this
+case, a C<content_type> field must also be supplied to describe it.
 
 =item content_type => STRING
 
@@ -574,12 +585,13 @@ server sent.
 Alternative to C<on_response>. A callback that is invoked when the header of a
 response has been received. It is expected to return a C<CODE> reference for
 handling chunks of body content. This C<CODE> reference will be invoked with
-no arguments once the end of the request has been reached.
+no arguments once the end of the request has been reached, and whatever it
+returns will be used as the result of the returned C<Future>, if there is one.
 
  $on_body_chunk = $on_header->( $header )
 
     $on_body_chunk->( $data )
-    $on_body_chunk->()
+    $response = $on_body_chunk->()
 
 =item on_error => CODE
 
@@ -615,6 +627,7 @@ sub _do_one_request
       host => $args{proxy_host} || $self->{proxy_host} || $host,
       port => $args{proxy_port} || $self->{proxy_port} || $port,
       SSL  => $args{SSL},
+      %{ $self->{ssl_params} },
       ( map { m/^SSL_/ ? ( $_ => $args{$_} ) : () } keys %args ),
    )->then( sub {
       my ( $conn ) = @_;
@@ -625,6 +638,18 @@ sub _do_one_request
          %args,
       );
    } );
+}
+
+sub _should_redirect
+{
+   my ( $response ) = @_;
+
+   # Should only redirect if we actually have a Location header
+   return 0 unless $response->is_redirect and defined $response->header( "Location" );
+
+   my $req_method = $response->request->method;
+   # Should only redirect GET or HEAD requests
+   return $req_method eq "GET" || $req_method eq "HEAD";
 }
 
 sub _do_request
@@ -712,7 +737,7 @@ sub _do_request
    while => sub {
       my $f = shift;
       return 0 if $f->failure or $f->is_cancelled;
-      return $response->is_redirect && $redirects--;
+      return _should_redirect( $response ) && $redirects--;
    } );
 
    if( $self->{fail_on_error} ) {
@@ -825,13 +850,19 @@ sub _make_request_for_uri
 
       # Lack of content_type didn't used to be a failure condition:
       ref $args{content} or defined $args{content_type} or
-      carp "No 'content_type' was given with 'content'";
+         carp "No 'content_type' was given with 'content'";
 
       # This will automatically encode a form for us
       $request = HTTP::Request::Common::POST( $uri, Content => $args{content}, Content_Type => $args{content_type} );
    }
    else {
       $request = HTTP::Request->new( $method, $uri );
+      if( defined $args{content} ) {
+         defined $args{content_type} or carp "No 'content_type' was given with 'content'";
+
+         $request->content( $args{content} );
+         $request->content_type( $args{content_type} // "" );
+      }
    }
 
    $request->protocol( "HTTP/1.1" );
@@ -856,14 +887,16 @@ sub _make_request_for_uri
    return %args;
 }
 
-=head2 $http->GET( $uri, %args ) ==> $response
+=head2 $response = $http->GET( $uri, %args )->get
 
-=head2 $http->HEAD( $uri, %args ) ==> $response
+=head2 $response = $http->HEAD( $uri, %args )->get
 
-=head2 $http->POST( $uri, $content, %args ) ==> $response
+=head2 $response = $http->PUT( $uri, $content, %args )->get
 
-Convenient wrappers for using the C<GET>, C<HEAD> or C<POST> methods with a
-C<URI> object and few if any other arguments, returning a C<Future>.
+=head2 $response = $http->POST( $uri, $content, %args )->get
+
+Convenient wrappers for using the C<GET>, C<HEAD>, C<PUT> or C<POST> methods
+with a C<URI> object and few if any other arguments, returning a C<Future>.
 
 Remember that C<POST> with non-form data (as indicated by a plain scalar
 instead of an C<ARRAY> reference of form data name/value pairs) needs a
@@ -883,6 +916,13 @@ sub HEAD
    my $self = shift;
    my ( $uri, @args ) = @_;
    return $self->do_request( method => "HEAD", uri => $uri, @args );
+}
+
+sub PUT
+{
+   my $self = shift;
+   my ( $uri, $content, @args ) = @_;
+   return $self->do_request( method => "PUT", uri => $uri, content => $content, @args );
 }
 
 sub POST
