@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.36';
+our $VERSION = '0.36_001';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -26,7 +26,7 @@ use URI;
 use IO::Async::Stream 0.59;
 use IO::Async::Loop 0.59; # ->connect( handle ) ==> $stream
 
-use Future 0.21; # ->then_with_f
+use Future 0.28; # ->set_label
 use Future::Utils 0.16 qw( repeat );
 
 use Scalar::Util qw( blessed );
@@ -379,7 +379,8 @@ sub get_connection
    }
 
    my $ready = $args{ready};
-   $ready or push @$ready_queue, $ready = Ready( $self->loop->new_future, 0 );
+   $ready or push @$ready_queue, $ready =
+      Ready( $self->loop->new_future->set_label( "[connect $host:$port]" ), 0 );
 
    my $f = $ready->future;
 

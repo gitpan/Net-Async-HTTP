@@ -5,7 +5,7 @@ WriteMakefile
   'NAME' => 'Net::Async::HTTP',
   'VERSION_FROM' => 'lib/Net/Async/HTTP.pm',
   'PREREQ_PM' => {
-                   'Future' => '0.21',
+                   'Future' => '0.28',
                    'Future::Utils' => '0.16',
                    'HTTP::Cookies' => 0,
                    'HTTP::Request' => 0,

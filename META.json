@@ -28,7 +28,7 @@
             "Compress::Raw::Zlib" : "2.057"
          },
          "requires" : {
-            "Future" : "0.21",
+            "Future" : "0.28",
             "Future::Utils" : "0.16",
             "HTTP::Request" : "0",
             "HTTP::Request::Common" : "0",
@@ -45,18 +45,23 @@
    "provides" : {
       "Net::Async::HTTP" : {
          "file" : "lib/Net/Async/HTTP.pm",
-         "version" : "0.36"
+         "version" : "0.36_001"
       },
       "Net::Async::HTTP::Connection" : {
          "file" : "lib/Net/Async/HTTP/Connection.pm",
-         "version" : "0.36"
+         "version" : "0.36_001"
+      },
+      "Net::Async::HTTP::StallTimer" : {
+         "file" : "lib/Net/Async/HTTP/StallTimer.pm",
+         "version" : "0.36_001"
       }
    },
-   "release_status" : "stable",
+   "release_status" : "testing",
    "resources" : {
       "license" : [
          "http://dev.perl.org/licenses/"
-      ]
+      ],
+      "x_IRC" : "irc://irc.perl.org/#io-async"
    },
-   "version" : "0.36"
+   "version" : "0.36_001"
 }

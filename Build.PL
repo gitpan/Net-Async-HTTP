@@ -6,7 +6,7 @@ use Module::Build;
 my $build = Module::Build->new(
    module_name => 'Net::Async::HTTP',
    requires => {
-      'Future' => '0.21', # ->then_with_f
+      'Future' => '0.28', # ->set_label
       'Future::Utils' => '0.16',
       'HTTP::Request' => 0,
       'HTTP::Request::Common' => 0,
@@ -33,6 +33,11 @@ my $build = Module::Build->new(
    create_makefile_pl => 'traditional',
    create_license => 1,
    create_readme  => 1,
+   meta_merge => {
+      resources => {
+         x_IRC => "irc://irc.perl.org/#io-async",
+      },
+   },
 );
 
 $build->create_build_script;

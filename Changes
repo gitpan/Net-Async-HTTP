@@ -1,5 +1,14 @@
 Revision history for Net-Async-HTTP
 
+0.36_001 2014/11/21 21:23:13
+        [CHANGES]
+         * Major refactoring of Net::Async::HTTP::Connection internal closure-
+           generation logic
+
+        [BUGFIXES]
+         * Attempt to handle the case where $f->done itself throws an
+           exception by at least maintaining internal state (RT100066)
+
 0.36    2014/10/14 12:03:07
         [CHANGES]
          * Set the content of generated requests if a 'content' param is given

@@ -8,20 +8,21 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.36';
+our $VERSION = '0.36_001';
 
 use Carp;
 
 use base qw( IO::Async::Stream );
 IO::Async::Stream->VERSION( '0.59' ); # ->write( ..., on_write )
-use IO::Async::Timer::Countdown;
+
+use Net::Async::HTTP::StallTimer;
 
 use HTTP::Response;
 
 my $CRLF = "\x0d\x0a"; # More portable than \r\n
 
 use Struct::Dumb;
-struct Responder => [qw( on_read on_error is_done )];
+struct Responder => [qw( on_read on_error stall_timer is_done )];
 
 # Detect whether HTTP::Message properly trims whitespace in header values. If
 # it doesn't, we have to deploy a workaround to fix them up.
@@ -137,20 +138,16 @@ sub is_idle
    return $self->{requests_in_flight} == 0;
 }
 
-sub _request_done
-{
-   my $self = shift;
-   $self->{requests_in_flight}--;
-   $self->debug_printf( "DONE remaining in-flight=$self->{requests_in_flight}" );
-   $self->ready;
-}
-
 sub on_read
 {
    my $self = shift;
    my ( $buffref, $closed ) = @_;
 
-   if( my $head = $self->{responder_queue}[0] ) {
+   while( my $head = $self->{responder_queue}[0]) {
+      shift @{ $self->{responder_queue} } and next if $head->is_done;
+
+      $head->stall_timer->reset if $head->stall_timer;
+
       my $ret = $head->on_read->( $self, $buffref, $closed, $head );
 
       if( defined $ret ) {
@@ -160,6 +157,8 @@ sub on_read
          return 1;
       }
 
+      $head->is_done or die "ARGH: undef return without being marked done";
+
       shift @{ $self->{responder_queue} };
       return 1 if !$closed and length $$buffref;
       return;
@@ -168,7 +167,9 @@ sub on_read
    # Reinvoked after switch back to baseline, but may be idle again
    return if $closed or !length $$buffref;
 
-   croak "Spurious on_read of connection while idle\n";
+   $self->invoke_error( "Spurious on_read of connection while idle",
+      http_connection => read => $$buffref );
+   $$buffref = "";
 }
 
 sub on_write_eof
@@ -216,7 +217,8 @@ sub request
       $req->init_header( "Accept-Encoding", "gzip" );
    }
 
-   my $f = $self->loop->new_future;
+   my $f = $self->loop->new_future
+      ->set_label( "$method " . $req->uri );
 
    # TODO: Cancelling a request Future shouldn't necessarily close the socket
    # if we haven't even started writing the request yet. But we can't know
@@ -224,19 +226,10 @@ sub request
    $f->on_cancel( sub { $self->close_now } );
 
    my $stall_timer;
-   my $stall_reason;
    if( $args{stall_timeout} ) {
-      $stall_timer = IO::Async::Timer::Countdown->new(
+      $stall_timer = Net::Async::HTTP::StallTimer->new(
          delay => $args{stall_timeout},
-         on_expire => sub {
-            my $self = shift;
-
-            my $conn = $self->parent;
-
-            $f->fail( "Stalled while $stall_reason", stall_timeout => );
-
-            $conn->close_now;
-         }
+         future => $f,
       );
       $self->add_child( $stall_timer );
       # Don't start it yet
@@ -260,11 +253,83 @@ sub request
       };
    }
 
-   my $on_read = sub {
+   my $write_request_body = defined $request_body ? sub {
+      my ( $self ) = @_;
+      $self->write( $request_body,
+         on_write => $on_body_write
+      );
+   } : undef;
+
+   # Unless the request method is CONNECT, the URL is not allowed to contain
+   # an authority; only path
+   # Take a copy of the headers since we'll be hacking them up
+   my $headers = $req->headers->clone;
+   my $path;
+   if( $method eq "CONNECT" ) {
+      $path = $req->uri->as_string;
+   }
+   else {
+      my $uri = $req->uri;
+      $path = $uri->path_query;
+      $path = "/$path" unless $path =~ m{^/};
+      my $authority = $uri->authority;
+      if( defined $authority and
+          my ( $user, $pass, $host ) = $authority =~ m/^(.*?):(.*)@(.*)$/ ) {
+         $headers->init_header( Host => $host );
+         $headers->authorization_basic( $user, $pass );
+      }
+      else {
+         $headers->init_header( Host => $authority );
+      }
+   }
+
+   my $protocol = $req->protocol || "HTTP/1.1";
+   my @headers = ( "$method $path $protocol" );
+   $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
+
+   $stall_timer->start if $stall_timer;
+   $stall_timer->reason = "writing request" if $stall_timer;
+
+   my $on_header_write = $stall_timer ? sub { $stall_timer->reset } : undef;
+
+   $self->write( join( $CRLF, @headers ) .
+                 $CRLF . $CRLF,
+                 on_write => $on_header_write );
+
+   $self->write( $req->content,
+                 on_write => $on_body_write ) if length $req->content;
+   $write_request_body->( $self ) if $write_request_body and !$expect_continue;
+
+   $self->write( "", on_flush => sub {
+      return unless $stall_timer; # test again in case it was cancelled in the meantime
+      $stall_timer->reset;
+      $stall_timer->reason = "waiting for response";
+   }) if $stall_timer;
+
+   $self->{requests_in_flight}++;
+
+   push @{ $self->{responder_queue} }, Responder(
+      $self->_mk_on_read_header(
+         $req, $args{previous_response}, $expect_continue ? $write_request_body : undef, $on_header, $stall_timer, $f
+      ),
+      sub { $f->fail( @_ ) unless $f->is_ready; }, # on_error
+      $stall_timer,
+      0, # is_done
+   );
+
+   return $f;
+}
+
+sub _mk_on_read_header
+{
+   shift; # $self
+   my ( $req, $previous_response, $write_request_body, $on_header, $stall_timer, $f ) = @_;
+
+   sub {
       my ( $self, $buffref, $closed, $responder ) = @_;
 
       if( $stall_timer ) {
-         $stall_reason = "receiving response header";
+         $stall_timer->reason = "receiving response header";
          $stall_timer->reset;
       }
 
@@ -303,13 +368,12 @@ sub request
 
       if( $header->code =~ m/^1/ ) { # 1xx is not a final response
          $self->debug_printf( "HEADER [provisional] %s", $status_line );
-         $self->write( $request_body,
-                       on_write => $on_body_write ) if $request_body and $expect_continue;
+         $write_request_body->( $self ) if $write_request_body;
          return 1;
       }
 
       $header->request( $req );
-      $header->previous( $args{previous_response} ) if $args{previous_response};
+      $header->previous( $previous_response ) if $previous_response;
 
       $self->debug_printf( "HEADER %s", $status_line );
 
@@ -337,15 +401,59 @@ sub request
          $self->{max_in_flight} = $max if $max && $max < $self->{max_in_flight};
       }
 
+      my $on_more = sub {
+         my ( $chunk ) = @_;
+
+         if( $decoder and not eval { $chunk = $decoder->( $chunk ); 1 } ) {
+            $self->debug_printf( "ERROR decode failed" );
+            $f->fail( "Decode error $@", http => undef, $req );
+            $self->close;
+            return undef;
+         }
+
+         $on_body_chunk->( $chunk );
+
+         return 1;
+      };
+      my $on_done = sub {
+         # TODO: IO::Async probably ought to do this. We need to fire the
+         # on_closed event _before_ calling on_body_chunk, to clear the
+         # connection cache in case another request comes - e.g. HEAD->GET
+         $self->close if $connection_close;
+
+         my $final;
+         if( $decoder and not eval { $final = $decoder->(); 1 } ) {
+            $self->debug_printf( "ERROR decode failed" );
+            $f->fail( "Decode error $@", http => undef, $req );
+            $self->close;
+            return undef;
+         }
+
+         $on_body_chunk->( $final ) if length $final;
+
+         my $response = $on_body_chunk->();
+         my $e = eval { $f->done( $response ) unless $f->is_cancelled; 1 } ? undef : $@;
+
+         $self->{requests_in_flight}--;
+         $self->debug_printf( "DONE remaining in-flight=$self->{requests_in_flight}" );
+         $self->ready;
+
+         if( defined $e ) {
+            chomp $e;
+            $self->invoke_error( $e, perl => );
+            # This might not return, if it top-level croaks
+         }
+
+         return undef; # Finished
+      };
+
       # RFC 2616 says "HEAD" does not have a body, nor do any 1xx codes, nor
       # 204 (No Content) nor 304 (Not Modified)
-      if( $method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
-         $self->debug_printf( "BODY done" );
+      if( $req->method eq "HEAD" or $code =~ m/^1..$/ or $code eq "204" or $code eq "304" ) {
+         $self->debug_printf( "BODY done [none]" );
          $responder->is_done++;
-         $self->close if $connection_close;
-         $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
-         $self->_request_done;
-         return undef; # Finished
+
+         return $on_done->();
       }
 
       my $transfer_encoding = $header->header( "Transfer-Encoding" );
@@ -354,253 +462,157 @@ sub request
       if( defined $transfer_encoding and $transfer_encoding eq "chunked" ) {
          $self->debug_printf( "BODY chunks" );
 
-         my $chunk_length;
-
-         $stall_reason = "receiving body chunks";
-         return sub {
-            my ( $self, $buffref, $closed, $responder ) = @_;
-
-            $stall_timer->reset if $stall_timer;
-
-            if( !defined $chunk_length and $$buffref =~ s/^(.*?)$CRLF// ) {
-               my $header = $1;
-
-               # Chunk header
-               unless( $header =~ s/^([A-Fa-f0-9]+).*// ) {
-                  $f->fail( "Corrupted chunk header", http => undef, $req ) unless $f->is_cancelled;
-                  $self->close_now;
-                  return 0;
-               }
-
-               $chunk_length = hex( $1 );
-               return 1 if $chunk_length;
-
-               my $trailer = "";
-
-               # Now the trailer
-               return sub {
-                  my ( $self, $buffref, $closed, $responder ) = @_;
-
-                  if( $closed ) {
-                     $self->debug_printf( "ERROR closed" );
-                     $f->fail( "Connection closed while awaiting chunk trailer", http => undef, $req ) unless $f->is_cancelled;
-                  }
-
-                  $$buffref =~ s/^(.*)$CRLF// or return 0;
-                  $trailer .= $1;
-
-                  return 1 if length $1;
-
-                  # TODO: Actually use the trailer
-
-                  $self->debug_printf( "BODY done" );
-                  $responder->is_done++;
-
-                  my $final;
-                  if( $decoder and not eval { $final = $decoder->(); 1 } ) {
-                     $self->debug_printf( "ERROR decode failed" );
-                     $f->fail( "Decode error $@", http => undef, $req );
-                     $self->close;
-                     return undef;
-                  }
-                  $final = $decoder->() if $decoder;
-
-                  $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
-                  $self->_request_done;
-                  return undef; # Finished
-               }
-            }
-
-            # Chunk is followed by a CRLF, which isn't counted in the length;
-            if( defined $chunk_length and length( $$buffref ) >= $chunk_length + 2 ) {
-               # Chunk body
-               my $chunk = substr( $$buffref, 0, $chunk_length, "" );
-               undef $chunk_length;
-
-               if( $decoder and not eval { $chunk = $decoder->( $chunk ); 1 } ) {
-                  $self->debug_printf( "ERROR decode failed" );
-                  $f->fail( "Decode error $@", http => undef, $req );
-                  $self->close;
-                  return undef;
-               }
-
-               unless( $$buffref =~ s/^$CRLF// ) {
-                  $self->debug_printf( "ERROR chunk without CRLF" );
-                  $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF", http => undef, $req ) unless $f->is_cancelled;
-                  $self->close;
-               }
-
-               $on_body_chunk->( $chunk );
-
-               return 1;
-            }
-
-            if( $closed ) {
-               $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting chunk", http => undef, $req ) unless $f->is_cancelled;
-            }
-            return 0;
-         };
+         $stall_timer->reason = "receiving body chunks" if $stall_timer;
+         return $self->_mk_on_read_chunked( $req, $on_more, $on_done, $f );
       }
       elsif( defined $content_length ) {
          $self->debug_printf( "BODY length $content_length" );
 
          if( $content_length == 0 ) {
-            $self->debug_printf( "BODY done" );
+            $self->debug_printf( "BODY done [length=0]" );
             $responder->is_done++;
-            $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
-            $self->_request_done;
-            return undef; # Finished
+
+            return $on_done->();
          }
 
-         $stall_reason = "receiving body";
-         return sub {
-            my ( $self, $buffref, $closed, $responder ) = @_;
-
-            $stall_timer->reset if $stall_timer;
-
-            # This will truncate it if the server provided too much
-            my $content = substr( $$buffref, 0, $content_length, "" );
-            $content_length -= length $content;
-
-            if( $decoder and not eval { $content = $decoder->( $content ); 1 } ) {
-               $self->debug_printf( "ERROR decode failed" );
-               $f->fail( "Decode error $@", http => undef, $req );
-               $self->close;
-               return undef;
-            }
-
-            $on_body_chunk->( $content );
-
-            if( $content_length == 0 ) {
-               $self->debug_printf( "BODY done" );
-               $responder->is_done++;
-               $self->close if $connection_close;
-
-               my $final;
-               if( $decoder and not eval { $final = $decoder->(); 1 } ) {
-                  $self->debug_printf( "ERROR decode failed" );
-                  $f->fail( "Decode error $@", http => undef, $req );
-                  $self->close;
-                  return undef;
-               }
-               $on_body_chunk->( $final ) if defined $final;
-
-               $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
-               $self->_request_done;
-               return undef;
-            }
-
-            if( $closed ) {
-               $self->debug_printf( "ERROR closed" );
-               $f->fail( "Connection closed while awaiting body", http => undef, $req ) unless $f->is_cancelled;
-            }
-            return 0;
-         };
+         $stall_timer->reason = "receiving body" if $stall_timer;
+         return $self->_mk_on_read_length( $content_length, $req, $on_more, $on_done, $f );
       }
       else {
          $self->debug_printf( "BODY until EOF" );
 
-         $stall_reason = "receiving body until EOF";
-         return sub {
-            my ( $self, $buffref, $closed, $responder ) = @_;
-
-            $stall_timer->reset if $stall_timer;
-
-            my $content = $$buffref;
-            $$buffref = "";
-
-            if( $decoder and not eval { $content = $decoder->( $content ); 1 } ) {
-               $self->debug_printf( "ERROR decode failed" );
-               $f->fail( "Decode error $@", http => undef, $req );
-               $self->close;
-               return undef;
-            }
-
-            $on_body_chunk->( $content );
-
-            return 0 unless $closed;
-
-            # TODO: IO::Async probably ought to do this. We need to fire the
-            # on_closed event _before_ calling on_body_chunk, to clear the
-            # connection cache in case another request comes - e.g. HEAD->GET
-            $responder->is_done++;
-            $self->close;
-
-            $self->debug_printf( "BODY done" );
-
-            my $final;
-            if( $decoder and not eval { $final = $decoder->(); 1 } ) {
-               $self->debug_printf( "ERROR decode failed" );
-               $f->fail( "Decode error $@", http => undef, $req );
-               $self->close;
-               return undef;
-            }
-            $on_body_chunk->( $final ) if defined $final;
-
-            $f->done( $on_body_chunk->() ) unless $f->is_cancelled;
-            # $self already closed
-            $self->_request_done;
-            return undef;
-         };
+         $stall_timer->reason = "receiving body until EOF" if $stall_timer;
+         return $self->_mk_on_read_until_eof( $req, $on_more, $on_done, $f );
       }
    };
+}
 
-   # Unless the request method is CONNECT, the URL is not allowed to contain
-   # an authority; only path
-   # Take a copy of the headers since we'll be hacking them up
-   my $headers = $req->headers->clone;
-   my $path;
-   if( $method eq "CONNECT" ) {
-      $path = $req->uri->as_string;
-   }
-   else {
-      my $uri = $req->uri;
-      $path = $uri->path_query;
-      $path = "/$path" unless $path =~ m{^/};
-      my $authority = $uri->authority;
-      if( defined $authority and
-          my ( $user, $pass, $host ) = $authority =~ m/^(.*?):(.*)@(.*)$/ ) {
-         $headers->init_header( Host => $host );
-         $headers->authorization_basic( $user, $pass );
+sub _mk_on_read_chunked
+{
+   shift; # $self
+   my ( $req, $on_more, $on_done, $f ) = @_;
+
+   my $chunk_length;
+
+   sub {
+      my ( $self, $buffref, $closed, $responder ) = @_;
+
+      if( !defined $chunk_length and $$buffref =~ s/^(.*?)$CRLF// ) {
+         my $header = $1;
+
+         # Chunk header
+         unless( $header =~ s/^([A-Fa-f0-9]+).*// ) {
+            $f->fail( "Corrupted chunk header", http => undef, $req ) unless $f->is_cancelled;
+            $self->close_now;
+            return 0;
+         }
+
+         $chunk_length = hex( $1 );
+         return 1 if $chunk_length;
+
+         return $self->_mk_on_read_chunk_trailer( $req, $on_more, $on_done, $f );
       }
-      else {
-         $headers->init_header( Host => $authority );
+
+      # Chunk is followed by a CRLF, which isn't counted in the length;
+      if( defined $chunk_length and length( $$buffref ) >= $chunk_length + 2 ) {
+         # Chunk body
+         my $chunk = substr( $$buffref, 0, $chunk_length, "" );
+         undef $chunk_length;
+
+         unless( $$buffref =~ s/^$CRLF// ) {
+            $self->debug_printf( "ERROR chunk without CRLF" );
+            $f->fail( "Chunk of size $chunk_length wasn't followed by CRLF", http => undef, $req ) unless $f->is_cancelled;
+            $self->close;
+         }
+
+         return $on_more->( $chunk );
       }
-   }
 
-   my $protocol = $req->protocol || "HTTP/1.1";
-   my @headers = ( "$method $path $protocol" );
-   $headers->scan( sub { push @headers, "$_[0]: $_[1]" } );
+      if( $closed ) {
+         $self->debug_printf( "ERROR closed" );
+         $f->fail( "Connection closed while awaiting chunk", http => undef, $req ) unless $f->is_cancelled;
+      }
+      return 0;
+   };
+}
 
-   $stall_timer->start if $stall_timer;
-   $stall_reason = "writing request";
+sub _mk_on_read_chunk_trailer
+{
+   shift; # $self
+   my ( $req, $on_more, $on_done, $f ) = @_;
 
-   my $on_header_write = $stall_timer ? sub { $stall_timer->reset } : undef;
+   my $trailer = "";
 
-   $self->write( join( $CRLF, @headers ) .
-                 $CRLF . $CRLF,
-                 on_write => $on_header_write );
+   sub {
+      my ( $self, $buffref, $closed, $responder ) = @_;
 
-   $self->write( $req->content,
-                 on_write => $on_body_write ) if length $req->content;
-   $self->write( $request_body,
-                 on_write => $on_body_write ) if $request_body and !$expect_continue;
+      if( $closed ) {
+         $self->debug_printf( "ERROR closed" );
+         $f->fail( "Connection closed while awaiting chunk trailer", http => undef, $req ) unless $f->is_cancelled;
+      }
 
-   $self->write( "", on_flush => sub {
-      $stall_timer->reset if $stall_timer; # test again in case it was cancelled in the meantime
-      $stall_reason = "waiting for response";
-   }) if $stall_timer;
+      $$buffref =~ s/^(.*)$CRLF// or return 0;
+      $trailer .= $1;
 
-   $self->{requests_in_flight}++;
+      return 1 if length $1;
 
-   push @{ $self->{responder_queue} }, Responder(
-      $on_read,
-      sub { $f->fail( @_ ) unless $f->is_ready; }, # on_error
-      0, # is_done
-   );
+      # TODO: Actually use the trailer
 
-   return $f;
+      $self->debug_printf( "BODY done [chunked]" );
+      $responder->is_done++;
+
+      return $on_done->();
+   };
+}
+
+sub _mk_on_read_length
+{
+   shift; # $self
+   my ( $content_length, $req, $on_more, $on_done, $f ) = @_;
+
+   sub {
+      my ( $self, $buffref, $closed, $responder ) = @_;
+
+      # This will truncate it if the server provided too much
+      my $content = substr( $$buffref, 0, $content_length, "" );
+      $content_length -= length $content;
+
+      return undef unless $on_more->( $content );
+
+      if( $content_length == 0 ) {
+         $self->debug_printf( "BODY done [length]" );
+         $responder->is_done++;
+
+         return $on_done->();
+      }
+
+      if( $closed ) {
+         $self->debug_printf( "ERROR closed" );
+         $f->fail( "Connection closed while awaiting body", http => undef, $req ) unless $f->is_cancelled;
+      }
+      return 0;
+   };
+}
+
+sub _mk_on_read_until_eof
+{
+   shift; # $self
+   my ( $req, $on_more, $on_done, $f ) = @_;
+
+   sub {
+      my ( $self, $buffref, $closed, $responder ) = @_;
+
+      my $content = $$buffref;
+      $$buffref = "";
+
+      return undef unless $on_more->( $content );
+
+      return 0 unless $closed;
+
+      $self->debug_printf( "BODY done [eof]" );
+      $responder->is_done++;
+      return $on_done->();
+   };
 }
 
 =head1 AUTHOR
