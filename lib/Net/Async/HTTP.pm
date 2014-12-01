@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.36_001';
+our $VERSION = '0.36_002';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -380,7 +380,7 @@ sub get_connection
 
    my $ready = $args{ready};
    $ready or push @$ready_queue, $ready =
-      Ready( $self->loop->new_future->set_label( "[connect $host:$port]" ), 0 );
+      Ready( $self->loop->new_future->set_label( "[ready $host:$port]" ), 0 );
 
    my $f = $ready->future;
 
@@ -388,8 +388,6 @@ sub get_connection
    if( $max and @$conns >= $max ) {
       return $f;
    }
-
-   $ready->connecting++;
 
    my $conn = Net::Async::HTTP::Connection->new(
       notifier_name => "$host:$port,connecting",
@@ -414,7 +412,7 @@ sub get_connection
    $self->add_child( $conn );
    push @$conns, $conn;
 
-   $self->connect_connection( %args,
+   $ready->connecting = $self->connect_connection( %args,
       conn => $conn,
       on_error => sub {
          my $conn = shift;

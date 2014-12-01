@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.36_001';
+our $VERSION = '0.36_002';
 
 use Carp;
 
@@ -110,8 +110,11 @@ sub ready
    if( $self->should_pipeline ) {
       $self->debug_printf( "READY pipelined" );
       while( @$queue && $self->should_pipeline ) {
-         my $f = ( shift @$queue )->future;
+         my $ready = shift @$queue;
+         my $f = $ready->future;
          next if $f->is_cancelled;
+
+         $ready->connecting and $ready->connecting->cancel;
 
          $f->done( $self );
       }
@@ -119,8 +122,11 @@ sub ready
    elsif( @$queue and $self->is_idle ) {
       $self->debug_printf( "READY non-pipelined" );
       while( @$queue ) {
-         my $f = ( shift @$queue )->future;
+         my $ready = shift @$queue;
+         my $f = $ready->future;
          next if $f->is_cancelled;
+
+         $ready->connecting and $ready->connecting->cancel;
 
          $f->done( $self );
          last;
@@ -343,6 +349,7 @@ sub _mk_on_read_header
          if( $closed ) {
             $self->debug_printf( "ERROR closed" );
             $f->fail( "Connection closed while awaiting header", http => undef, $req ) unless $f->is_cancelled;
+            $self->close_now;
          }
          return 0;
       }
