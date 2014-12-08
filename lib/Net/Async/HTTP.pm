@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Notifier );
 
-our $VERSION = '0.36_002';
+our $VERSION = '0.36_003';
 
 our $DEFAULT_UA = "Perl + " . __PACKAGE__ . "/$VERSION";
 our $DEFAULT_MAXREDIR = 3;
@@ -427,7 +427,10 @@ sub get_connection
             $self->get_connection( %args, ready => $next );
          }
       },
-   );
+   )->on_cancel( sub {
+      $conn->remove_from_parent;
+      @$conns = grep { $_ != $conn } @$conns;
+   });
 
    return $f;
 }

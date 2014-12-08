@@ -1,5 +1,9 @@
 Revision history for Net-Async-HTTP
 
+0.36_003 2014/12/08 16:15:21
+        [BUGFIXES]
+         * Remember to remove cancelled connections from the connection cache
+
 0.36_002 2014/12/01 17:39:04
         [BUGFIXES]
          * Cancel pending connect Futures if pipelining means an existing

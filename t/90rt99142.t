@@ -60,6 +60,10 @@ my $req_f2 = $http->GET( "http://localhost:5000/2" );
 my ( $conn2, $conn_f2 ) = await_connection;
 ok( $conn_f2, 'Second connection request is pending' );
 
+# Gutwrenching
+is( scalar @{ $http->{connections}{"localhost:5000"} }, 2,
+   '$http has two pending connections to localhost:5000' );
+
 my $request_stream = "";
 wait_for_stream { $request_stream =~ m/$CRLF$CRLF/ } $peersock => $request_stream;
 
@@ -81,5 +85,9 @@ like( $request_stream, qr(^GET /2), 'Second request written down first socket' )
 
 # And $conn_f2 should already be cancelled
 ok( $conn_f2->is_cancelled, '$conn_f2 now cancelled' );
+
+# Gutwrenching
+is( scalar @{ $http->{connections}{"localhost:5000"} }, 1,
+   '$http has only one connection to localhost:5000 at EOF' );
 
 done_testing;
