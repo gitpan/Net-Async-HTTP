@@ -1,20 +1,13 @@
 Revision history for Net-Async-HTTP
 
-0.36_003 2014/12/08 16:15:21
-        [BUGFIXES]
-         * Remember to remove cancelled connections from the connection cache
-
-0.36_002 2014/12/01 17:39:04
-        [BUGFIXES]
-         * Cancel pending connect Futures if pipelining means an existing
-           connection can be reused; handles failures better (RT99142)
-
-0.36_001 2014/11/21 21:23:13
+0.37    2014/12/13 15:06:06
         [CHANGES]
          * Major refactoring of Net::Async::HTTP::Connection internal closure-
            generation logic
 
         [BUGFIXES]
+         * Cancel pending connect Futures if pipelining means an existing
+           connection can be reused; handles failures better (RT99142)
          * Attempt to handle the case where $f->done itself throws an
            exception by at least maintaining internal state (RT100066)
 

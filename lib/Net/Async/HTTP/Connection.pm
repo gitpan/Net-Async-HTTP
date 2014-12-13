@@ -8,7 +8,7 @@ package Net::Async::HTTP::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.36_003';
+our $VERSION = '0.37';
 
 use Carp;
 
